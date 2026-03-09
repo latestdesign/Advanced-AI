@@ -1,1 +1,1 @@
-You can find the lecture notes for this course on its Moodle's page.
+You can find the lecture notes for this course on its Moodle page.
