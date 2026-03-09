@@ -33,7 +33,8 @@ class CausalSelfAttention(nn.Module):
         super().__init__()
         assert config.n_embd % config.n_head == 0
         # key, query, value projections for all heads, but in a batch
-        self.c_attn = # TODO. /!\ note that each k, q, v vector will be of size (n_embd // n_head)
+        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
+        # each k, q, v vector will be of size (n_embd // n_head)
         # output projection
         self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
         # regularization
@@ -63,9 +64,9 @@ class CausalSelfAttention(nn.Module):
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
         q, k, v = self.c_attn(x).split(self.n_embd, dim=2)
-        k = # TODO. output shape: (B, nh, T, hs)
-        q = # TODO. output shape:  (B, nh, T, hs)
-        v = # TODO. output shape: (B, nh, T, hs)
+        k = k.view(B, T, self.n_head, self.n_embd // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
+        q = q.view(B, T, self.n_head, self.n_embd // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
+        v = v.view(B, T, self.n_head, self.n_embd // self.n_head).transpose(1, 2)  # (B, nh, T, hs)
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         if self.flash:
@@ -80,9 +81,9 @@ class CausalSelfAttention(nn.Module):
             )
         else:
             # manual implementation of attention
-            att = # TODO matmul and scaling
-            att = # TODO causal mask (using att.masked_fill)
-            att = # TODO softmax and dropout
+            att = (q @ k.transpose(-1, -2)) / math.sqrt(k.size(-1)) # matmul and scaling
+            att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float("-inf")) # causal mask (using att.masked_fill)
+            att = self.attn_dropout(F.softmax(att, dim=-1)) # softmax and dropout
             y = att @ v  # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
         y = (
             y.transpose(1, 2).contiguous().view(B, T, C)
@@ -90,7 +91,7 @@ class CausalSelfAttention(nn.Module):
 
         # output projection
         y = self.resid_dropout(
-            # TODO
+            self.c_proj(y) # was TODO
             )
         return y
 
@@ -99,13 +100,16 @@ class MLP(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        self.c_fc = # TODO the depth of the MLP will be 4 * config.n_embd
+        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias) # TODO the depth of the MLP will be 4 * config.n_embd
         self.gelu = nn.GELU()
-        self.c_proj = # TODO
+        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias) #  # TODO
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x):
-        # TODO
+        x = self.c_fc(x)
+        x = self.gelu(x)
+        x = self.c_proj(x)
+        x = self.dropout(x)
         return x
 
 
@@ -120,6 +124,8 @@ class Block(nn.Module):
 
     def forward(self, x):
         # TODO layer_norm -> attention with residual connection -> layer_norm -> MLP with residual connection
+        x = x + self.attn(self.ln_1(x))
+        x = x + self.mlp(self.ln_2(x))
         return x
 
 
@@ -196,27 +202,30 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, idx):
+    def forward(self, idx, targets=None):
         device = idx.device
         b, t = idx.size()
-        assert (
-            t <= self.config.block_size
-        ), f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
+        assert t <= self.config.block_size, f"Cannot forward sequence of length {t}, block_size is only {self.config.block_size}"
+        
+        # forward the token and position embeddings
         pos = torch.arange(0, t, dtype=torch.long, device=device)  # shape (t)
-
-        # forward the GPT model itself
         tok_emb = self.transformer.wte(idx)  # token embeddings of shape (b, t, n_embd)
         pos_emb = self.transformer.wpe(pos)  # position embeddings of shape (t, n_embd)
-        x = # TODO: Dropout + positional encoding
-        # TODO apply blocks sequentially
+        x = self.transformer.drop(tok_emb + pos_emb)
+        
+        # forward the blocks of the transformer
+        for block in self.transformer.h:
+            x = block(x)
+        
+        # forward the final layer norm and the lm_head
         x = self.transformer.ln_f(x)
-
-        # inference-time mini-optimization: only forward the lm_head on the very last position
-        logits = self.lm_head(
-            # TODO keep the logits of the final position
-        )  # note: using list [-1] to preserve the time dim
-
-        return logits
+        logits = self.lm_head(x)  # (b, t, vocab_size)
+        
+        loss = None
+        if targets is not None:
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+        
+        return logits, loss
 
     def crop_block_size(self, block_size):
         # model surgery to decrease the block size if necessary
@@ -317,7 +326,7 @@ class GPT(nn.Module):
                 else idx[:, -self.config.block_size :]
             )
             # forward the model to get the logits for the index in the sequence
-            logits = self(idx_cond)
+            logits, _ = self(idx_cond)
             # pluck the logits at the final step and scale by desired temperature
             logits = logits[:, -1, :] / temperature
             # optionally crop the logits to only the top k options
