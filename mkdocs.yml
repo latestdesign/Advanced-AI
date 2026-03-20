@@ -31,12 +31,24 @@ nav:
   - Welcome: index.md
   - Programming Practicals:
       - "PP1: GPT-2": practicals/pp1-gpt2.md
+      - "PP2: Vision": practicals/pp2-vision.md
+      - "PP3: CLIP": practicals/pp3-clip.md
+      - "PP4: Tokenizer": practicals/pp4-tokenizer.md
+      - "PP5: Pretraining GPT2": practicals/pp5-pretraining.md
   - Lecture Notes: lecture_notes.md
 
 markdown_extensions:
   - admonition
   - pymdownx.highlight:
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - footnotes
   - toc:
       permalink: true
+
+extra_javascript:
+  - https://unpkg.com/mermaid@10/dist/mermaid.min.js
+  - javascripts/mermaid-init.js

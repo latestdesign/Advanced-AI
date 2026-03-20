@@ -16,5 +16,7 @@ env/
 .venv/
 .aai_env/
 site/
-truc
-*/model_solution.py
+PP3: CLIP/data/cifar*
+!PP5: Pretraining GPT2/data/french_philosophy/*.bin
+PP5: Pretraining GPT2/model_solution.py
+PP5: Pretraining GPT2/train_solution.py
