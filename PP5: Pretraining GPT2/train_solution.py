@@ -17,7 +17,7 @@ import torch
 from torch.nn import functional as F
 from tqdm import tqdm
 
-from model import GPTConfig, GPT
+from model_solution import GPTConfig, GPT
 
 # -----------------------------------------------------------------------------
 # default config values designed to train a gpt2 (124M) on OpenWebText
@@ -72,7 +72,7 @@ exec(open("configurator.py").read())  # overrides from command line or config fi
 config = {k: globals()[k] for k in config_keys}  # will be useful for logging
 # -----------------------------------------------------------------------------
 
-tokens_per_iter = gradient_accumulation_steps * batch_size * block_size 
+tokens_per_iter = gradient_accumulation_steps * batch_size * block_size
 print(f"tokens per iteration will be: {tokens_per_iter:,}")
 
 os.makedirs(out_dir, exist_ok=True)
@@ -103,9 +103,16 @@ def get_batch(split):
         data = np.memmap(os.path.join(data_dir, "train.bin"), dtype=np.uint16, mode="r")
     else:
         data = np.memmap(os.path.join(data_dir, "val.bin"), dtype=np.uint16, mode="r")
-    ix = # TODO: sample batch_size random starting indices in [0, len(data) - block_size). block_size is the context length.
-    x = # TODO: for each index i in ix, extract a chunk of block_size tokens from data as input. Stack them into a tensor of shape (batch_size, block_size). Cast to int64.
-    y = # TODO: for each index i in ix, extract a chunk of block_size tokens shifted by 1 position (i+1 to i+1+block_size) as target. Stack into the same shape. Cast to int64.
+    ix = torch.randint(len(data) - block_size, (batch_size,))
+    x = torch.stack(
+        [torch.from_numpy((data[i : i + block_size]).astype(np.int64)) for i in ix]
+    )
+    y = torch.stack(
+        [
+            torch.from_numpy((data[i + 1 : i + 1 + block_size]).astype(np.int64))
+            for i in ix
+        ]
+    )
     if device_type == "cuda":
         # pin arrays x,y, which allows us to move them to GPU asynchronously (non_blocking=True)
         x, y = x.pin_memory().to(device, non_blocking=True), y.pin_memory().to(
@@ -134,7 +141,7 @@ model_args = dict(
     n_layer=n_layer,
     n_head=n_head,
     n_embd=n_embd,
-    block_size =block_size ,
+    block_size=block_size,
     bias=bias,
     vocab_size=None,
     dropout=dropout,
@@ -158,7 +165,7 @@ elif init_from == "resume":
     checkpoint_model_args = checkpoint["model_args"]
     # force these config attributes to be equal otherwise we can't even resume training
     # the rest of the attributes (e.g. dropout) can stay as desired from command line
-    for k in ["n_layer", "n_head", "n_embd", "block_size ", "bias", "vocab_size"]:
+    for k in ["n_layer", "n_head", "n_embd", "block_size", "bias", "vocab_size"]:
         model_args[k] = checkpoint_model_args[k]
     # create the model
     gptconf = GPTConfig(**model_args)
@@ -179,13 +186,13 @@ elif init_from.startswith("gpt2"):
     override_args = dict(dropout=dropout)
     model = GPT.from_pretrained(init_from, override_args)
     # read off the created config params, so we can store them into checkpoint correctly
-    for k in ["n_layer", "n_head", "n_embd", "block_size ", "bias", "vocab_size"]:
+    for k in ["n_layer", "n_head", "n_embd", "block_size", "bias", "vocab_size"]:
         model_args[k] = getattr(model.config, k)
 # crop down the model block size if desired, using model surgery
-if block_size  < model.config.block_size :
-    model.crop_block_size (block_size )
-    model_args["block_size "] = (
-        block_size   # so that the checkpoint will have the right value
+if block_size < model.config.block_size:
+    model.crop_block_size(block_size)
+    model_args["block_size"] = (
+        block_size  # so that the checkpoint will have the right value
     )
 model.to(device)
 
@@ -284,8 +291,10 @@ while True:
     # and using the GradScaler if data type is float16
     for micro_step in range(gradient_accumulation_steps):
         with ctx:
-            logits = # TODO: forward pass through the model on X
-            loss = # TODO: compute the cross-entropy loss between the model predictions and targets Y. Reshape logits to (batch_size*sequence_length, vocab_size) and Y to (batch_size*sequence_length). Use ignore_index=-1.
+            logits = model(X)
+            loss = F.cross_entropy(
+                logits.view(-1, logits.size(-1)), Y.view(-1), ignore_index=-1
+            )
             loss = (
                 loss / gradient_accumulation_steps
             )  # scale the loss to account for gradient accumulation
