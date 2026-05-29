@@ -39,9 +39,7 @@ class RMSNorm(nn.Module):
 
         self.weight = nn.Parameter(torch.ones(hidden_dim))    # learnable scale of shape [hidden_dim], initialized to
         #                      # all ones (use nn.Parameter)
-        self.rms_eps = 1e-9
-
-        raise NotImplementedError
+        self.rms_eps = cfg.rms_eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -52,7 +50,9 @@ class RMSNorm(nn.Module):
         """
         # TODO: Compute the inverse RMS of x along the last dimension
         #       (keepdim=True), then scale x by it and the learned weight.
-        raise NotImplementedError
+        mean_square = x.pow(2).mean(dim=-1, keepdim=True)
+        out = x * torch.rsqrt(mean_square) * self.weight
+        return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
