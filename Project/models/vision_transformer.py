@@ -53,10 +53,12 @@ class ViTPatchEmbeddings(nn.Module):
         self.hidden_dim = cfg.hidden_dim  # 768
 
         self.num_patches = self.img_size//self.patch_size          # total patches = (img_size // patch_size)²
-        # self.conv = ...                 # Conv2d patch extractor: kernel_size and stride
+        self.conv = nn.Conv2d(in_channels = 3, out_channels=hidden_dim, padding="valid",
+                              kernel_size= patch_size, stride = patch_size)                
+                                        # Conv2d patch extractor: kernel_size and stride
         #                                 # both equal to patch_size, in_channels=3,
         #                                 # out_channels=hidden_dim, padding="valid"
-        # self.position_embedding = ...   # learnable nn.Parameter of shape
+        self.position_embedding = nn.Parameter(torch.zeros(1, num_patches, hidden_dim))   # learnable nn.Parameter of shape
         #                                 # [1, num_patches, hidden_dim]
 
         raise NotImplementedError
@@ -156,10 +158,10 @@ class ViTMLP(nn.Module):
     def __init__(self, cfg):
         super().__init__()
 
-        # self.activation_fn = ...    # GELU activation (approximate='tanh')
-        # self.fc1 = ...              # Linear: hidden_dim → inter_dim
-        # self.fc2 = ...              # Linear: inter_dim → hidden_dim
-        # self.dropout = ...          # Dropout
+        self.activation_fn = nn.GELU(approximate='tanh')    # GELU activation (approximate='tanh')
+        self.fc1 = nn.Linear(hidden_dim, inter_dim)              # Linear: hidden_dim → inter_dim
+        self.fc2 = nn.Linear(inter_dim, hidden_dim)              # Linear: inter_dim → hidden_dim
+        self.dropout = nn.Dropout()         # Dropout
 
         raise NotImplementedError
 
@@ -170,6 +172,11 @@ class ViTMLP(nn.Module):
         TODO: Pass through fc1, apply the GELU activation, then fc2,
               then dropout.
         """
+        x = self.fc1(x)
+        x = self.activation_fn(x)
+        x = self.fc2(x)
+        x = self.dropout(x)
+        return x
         raise NotImplementedError
 
 
@@ -179,9 +186,9 @@ class ViTBlock(nn.Module):
     def __init__(self, cfg):
         super().__init__()
 
-        # self.ln1 = ...    # LayerNorm applied before attention
+        self.ln1 = nn.LayerNorm()    # LayerNorm applied before attention
         # self.attn = ...   # the ViTAttention sub-layer
-        # self.ln2 = ...    # LayerNorm applied before the MLP
+        self.ln2 = nn.Layer Norm()   # LayerNorm applied before the MLP
         # self.mlp = ...    # the ViTMLP sub-layer
 
         raise NotImplementedError
@@ -208,7 +215,7 @@ class ViT(nn.Module):
         self.cls_flag = cfg.cls_flag
 
         # self.patch_embedding = ...  # the ViTPatchEmbeddings sub-module
-        # self.dropout = ...          # Dropout
+        self.dropout = nn.Dropout()         # Dropout
         # self.blocks = ...           # ModuleList of n_blocks ViTBlock layers
         # self.layer_norm = ...       # final LayerNorm (hidden_dim, eps=cfg.ln_eps)
 
