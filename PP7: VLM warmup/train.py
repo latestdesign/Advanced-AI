@@ -7,11 +7,12 @@ from contextlib import nullcontext
 from dataclasses import asdict
 
 import torch
-from datasets import concatenate_datasets, load_dataset
+from datasets import concatenate_datasets, load_dataset, disable_caching
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers import AutoConfig
 import matplotlib.pyplot as plt
+disable_caching()
 
 from data.collators import VQACollator
 from data.datasets import VQADataset
