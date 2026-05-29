@@ -39,7 +39,7 @@ class RMSNorm(nn.Module):
 
         self.weight = nn.Parameter(torch.ones(hidden_dim))    # learnable scale of shape [hidden_dim], initialized to
         #                      # all ones (use nn.Parameter)
-        # self.rms_eps = ...
+        self.rms_eps = 1e-9
 
         raise NotImplementedError
 
