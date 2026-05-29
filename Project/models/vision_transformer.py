@@ -52,7 +52,7 @@ class ViTPatchEmbeddings(nn.Module):
         self.patch_size = cfg.patch_size  # 16
         self.hidden_dim = cfg.hidden_dim  # 768
 
-        # self.num_patches = ...          # total patches = (img_size // patch_size)²
+        self.num_patches = self.img_size//self.patch_size          # total patches = (img_size // patch_size)²
         # self.conv = ...                 # Conv2d patch extractor: kernel_size and stride
         #                                 # both equal to patch_size, in_channels=3,
         #                                 # out_channels=hidden_dim, padding="valid"
