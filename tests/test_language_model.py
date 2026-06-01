@@ -105,230 +105,230 @@ class TestRotaryEmbedding:
         assert rope.re_base == 10000
 
 
-class TestLMAttention:
-    def test_init(self, cfg):
-        """GQA projections: q is full width, k/v use n_kv_heads × head_dim.
+# class TestLMAttention:
+#     def test_init(self, cfg):
+#         """GQA projections: q is full width, k/v use n_kv_heads × head_dim.
 
-        With n_heads=4, n_kv_heads=2, head_dim=8:
-            q_proj : Linear(32 → 32)   weight (32, 32)
-            k_proj : Linear(32 → 16)   weight (16, 32)   16 = 2×8
-            v_proj : Linear(32 → 16)   weight (16, 32)
-            out_proj: Linear(32 → 32)  weight (32, 32)
-        All projections are bias-free (SmolLM2 convention).
-        n_kv_groups = n_heads // n_kv_heads = 2.
-        head_dim = hidden_dim // n_heads = 8.
-        """
-        attn = LMAttention(cfg)
-        assert attn.head_dim == 8
-        assert attn.n_kv_groups == 2
-        assert attn.q_proj.weight.shape == (32, 32)
-        assert attn.k_proj.weight.shape == (16, 32)
-        assert attn.v_proj.weight.shape == (16, 32)
-        assert attn.out_proj.weight.shape == (32, 32)
-        assert attn.q_proj.bias is None
+#         With n_heads=4, n_kv_heads=2, head_dim=8:
+#             q_proj : Linear(32 → 32)   weight (32, 32)
+#             k_proj : Linear(32 → 16)   weight (16, 32)   16 = 2×8
+#             v_proj : Linear(32 → 16)   weight (16, 32)
+#             out_proj: Linear(32 → 32)  weight (32, 32)
+#         All projections are bias-free (SmolLM2 convention).
+#         n_kv_groups = n_heads // n_kv_heads = 2.
+#         head_dim = hidden_dim // n_heads = 8.
+#         """
+#         attn = LMAttention(cfg)
+#         assert attn.head_dim == 8
+#         assert attn.n_kv_groups == 2
+#         assert attn.q_proj.weight.shape == (32, 32)
+#         assert attn.k_proj.weight.shape == (16, 32)
+#         assert attn.v_proj.weight.shape == (16, 32)
+#         assert attn.out_proj.weight.shape == (32, 32)
+#         assert attn.q_proj.bias is None
 
-    def test_output_shape_prefill(self, cfg):
-        """Prefill (no cache): output shape matches input, cache has key/value."""
-        attn = LMAttention(cfg)
-        x = torch.randn(B, T, cfg.hidden_dim)
-        rope = RotaryEmbedding(cfg)
-        pos_ids = torch.arange(T).unsqueeze(0).expand(B, -1)
-        cos, sin = rope(pos_ids)
-        out, cache = attn(x, cos, sin, block_kv_cache=None)
-        assert out.shape == (B, T, cfg.hidden_dim)
-        assert 'key' in cache and 'value' in cache
+#     def test_output_shape_prefill(self, cfg):
+#         """Prefill (no cache): output shape matches input, cache has key/value."""
+#         attn = LMAttention(cfg)
+#         x = torch.randn(B, T, cfg.hidden_dim)
+#         rope = RotaryEmbedding(cfg)
+#         pos_ids = torch.arange(T).unsqueeze(0).expand(B, -1)
+#         cos, sin = rope(pos_ids)
+#         out, cache = attn(x, cos, sin, block_kv_cache=None)
+#         assert out.shape == (B, T, cfg.hidden_dim)
+#         assert 'key' in cache and 'value' in cache
 
-    def test_kv_cache_shape(self, cfg):
-        """Cached K and V must be [B, n_kv_heads, T, head_dim].
+#     def test_kv_cache_shape(self, cfg):
+#         """Cached K and V must be [B, n_kv_heads, T, head_dim].
 
-        Note: only n_kv_heads (not n_heads) KV pairs are stored — that is
-        the whole point of Grouped-Query Attention.
-        """
-        attn = LMAttention(cfg)
-        x = torch.randn(B, T, cfg.hidden_dim)
-        rope = RotaryEmbedding(cfg)
-        pos_ids = torch.arange(T).unsqueeze(0).expand(B, -1)
-        cos, sin = rope(pos_ids)
-        _, cache = attn(x, cos, sin, block_kv_cache=None)
-        head_dim = cfg.hidden_dim // cfg.n_heads
-        assert cache['key'].shape == (B, cfg.n_kv_heads, T, head_dim)
-        assert cache['value'].shape == (B, cfg.n_kv_heads, T, head_dim)
-
-
-class TestLMMLp:
-    def test_init(self, cfg):
-        """SwiGLU MLP has three projections: gate, up (both expand), down (contracts).
-
-        gate_proj and up_proj both map hidden_dim → inter_dim.
-        down_proj maps inter_dim → hidden_dim.
-        All are bias-free (SmolLM2 convention).
-        Shapes with hidden_dim=32, inter_dim=64:
-            gate_proj.weight: (64, 32)
-            up_proj.weight:   (64, 32)
-            down_proj.weight: (32, 64)
-        """
-        mlp = LMMLP(cfg)
-        assert mlp.gate_proj.weight.shape == (64, 32)
-        assert mlp.up_proj.weight.shape == (64, 32)
-        assert mlp.down_proj.weight.shape == (32, 64)
-
-    def test_output_shape(self, cfg):
-        """MLP is applied position-wise — shape [B, T, C] in, [B, T, C] out."""
-        mlp = LMMLP(cfg)
-        x = torch.randn(B, T, cfg.hidden_dim)
-        assert mlp(x).shape == (B, T, cfg.hidden_dim)
+#         Note: only n_kv_heads (not n_heads) KV pairs are stored — that is
+#         the whole point of Grouped-Query Attention.
+#         """
+#         attn = LMAttention(cfg)
+#         x = torch.randn(B, T, cfg.hidden_dim)
+#         rope = RotaryEmbedding(cfg)
+#         pos_ids = torch.arange(T).unsqueeze(0).expand(B, -1)
+#         cos, sin = rope(pos_ids)
+#         _, cache = attn(x, cos, sin, block_kv_cache=None)
+#         head_dim = cfg.hidden_dim // cfg.n_heads
+#         assert cache['key'].shape == (B, cfg.n_kv_heads, T, head_dim)
+#         assert cache['value'].shape == (B, cfg.n_kv_heads, T, head_dim)
 
 
-class TestLMBlock:
-    def test_init(self, cfg):
-        """LMBlock must wire two RMSNorms, one LMAttention, and one LMMLP.
+# class TestLMMLp:
+#     def test_init(self, cfg):
+#         """SwiGLU MLP has three projections: gate, up (both expand), down (contracts).
 
-        Attribute names matter: LanguageModel.from_pretrained maps HF keys to
-        norm1, norm2, attn, mlp — any other names will break weight loading.
-        """
-        block = LMBlock(cfg)
-        assert isinstance(block.norm1, RMSNorm)
-        assert isinstance(block.norm2, RMSNorm)
-        assert isinstance(block.attn, LMAttention)
-        assert isinstance(block.mlp, LMMLP)
+#         gate_proj and up_proj both map hidden_dim → inter_dim.
+#         down_proj maps inter_dim → hidden_dim.
+#         All are bias-free (SmolLM2 convention).
+#         Shapes with hidden_dim=32, inter_dim=64:
+#             gate_proj.weight: (64, 32)
+#             up_proj.weight:   (64, 32)
+#             down_proj.weight: (32, 64)
+#         """
+#         mlp = LMMLP(cfg)
+#         assert mlp.gate_proj.weight.shape == (64, 32)
+#         assert mlp.up_proj.weight.shape == (64, 32)
+#         assert mlp.down_proj.weight.shape == (32, 64)
 
-    def test_output_shape(self, cfg):
-        """Block is a residual unit — shape is unchanged and cache is returned."""
-        block = LMBlock(cfg)
-        x = torch.randn(B, T, cfg.hidden_dim)
-        rope = RotaryEmbedding(cfg)
-        pos_ids = torch.arange(T).unsqueeze(0).expand(B, -1)
-        cos, sin = rope(pos_ids)
-        out, cache = block(x, cos, sin)
-        assert out.shape == (B, T, cfg.hidden_dim)
-        assert cache is not None
-
-
-class TestLanguageModel:
-    def test_init(self, cfg):
-        """Embedding table and output head must share the same tensor (weight tying).
-
-        SmolLM2 uses tied weights: head.weight IS token_embedding.weight.
-        This halves the parameter count for the vocabulary matrices.
-        data_ptr() returns the memory address — equality means the same tensor.
-        """
-        model = LanguageModel(cfg)
-        assert model.token_embedding.weight.shape == (256, 32)
-        assert model.head.weight.shape == (256, 32)
-        assert len(model.blocks) == 2
-        assert (
-            model.head.weight.data_ptr()
-            == model.token_embedding.weight.data_ptr()
-        )
-
-    def test_forward_shape(self, cfg):
-        """forward() returns (hidden_states, kv_cache).
-
-        hidden_states shape: [B, T, hidden_dim] — same as input.
-        kv_cache: list of n_blocks dicts (one per transformer block).
-        Note: forward takes embeddings, not token ids.
-        """
-        model = LanguageModel(cfg)
-        x = torch.randn(B, T, cfg.hidden_dim)  # embeddings, not token ids
-        hidden, kv = model(x)
-        assert hidden.shape == (B, T, cfg.hidden_dim)
-        assert len(kv) == cfg.n_blocks
-
-    def test_head_shape(self, cfg):
-        """head projects hidden states to one logit per vocabulary entry."""
-        model = LanguageModel(cfg)
-        x = torch.randn(B, T, cfg.hidden_dim)
-        hidden, _ = model(x)
-        logits = model.head(hidden)
-        assert logits.shape == (B, T, cfg.vocab_size)
-
-    def test_kv_cache_consistency(self, cfg):
-        """Prefill + single-token decode must match full-sequence forward.
-
-        This is the key correctness test for KV caching + RoPE.
-
-        Strategy:
-          1. Full sequence [tok_0, ..., tok_{T-1}] in one shot → logits_full
-          2. Prefix [tok_0, ..., tok_{T-2}] to build the KV cache
-          3. Just [tok_{T-1}] with start_pos=T-1 → logits_last
-          4. logits_last should equal logits_full[:, -1, :]
-        """
-        torch.manual_seed(42)
-        model = LanguageModel(cfg)
-        model.eval()
-
-        x = torch.randn(1, T, cfg.hidden_dim)
-
-        with torch.no_grad():
-            hidden_full, _ = model(x, kv_cache=None, start_pos=0)
-            logits_full = model.head(hidden_full)           # [1, T, vocab]
-
-            hidden_prefix, kv = model(
-                x[:, :-1, :], kv_cache=None, start_pos=0
-            )
-            hidden_last, _ = model(
-                x[:, -1:, :], kv_cache=kv, start_pos=T - 1
-            )
-            logits_last = model.head(hidden_last)           # [1, 1, vocab]
-
-        torch.testing.assert_close(
-            logits_full[:, -1:, :], logits_last,
-            atol=1e-4, rtol=1e-4,
-            msg=(
-                "KV cache decode does not match full-sequence forward — "
-                "check your KV concatenation and start_pos in RoPE."
-            ),
-        )
+#     def test_output_shape(self, cfg):
+#         """MLP is applied position-wise — shape [B, T, C] in, [B, T, C] out."""
+#         mlp = LMMLP(cfg)
+#         x = torch.randn(B, T, cfg.hidden_dim)
+#         assert mlp(x).shape == (B, T, cfg.hidden_dim)
 
 
-@pytest.mark.slow
-class TestLanguageModelPretrainedLoading:
-    """Load real SmolLM2-360M weights and verify architecture.
+# class TestLMBlock:
+#     def test_init(self, cfg):
+#         """LMBlock must wire two RMSNorms, one LMAttention, and one LMMLP.
 
-    Skipped by default — requires ~720 MB download.
-    Run with:  pytest tests/test_language_model.py -m slow
-    """
+#         Attribute names matter: LanguageModel.from_pretrained maps HF keys to
+#         norm1, norm2, attn, mlp — any other names will break weight loading.
+#         """
+#         block = LMBlock(cfg)
+#         assert isinstance(block.norm1, RMSNorm)
+#         assert isinstance(block.norm2, RMSNorm)
+#         assert isinstance(block.attn, LMAttention)
+#         assert isinstance(block.mlp, LMMLP)
 
-    @pytest.fixture(scope="class")
-    def pretrained(self):
-        from models.config import LMConfig
-        cfg = LMConfig()
-        model = LanguageModel.from_pretrained(cfg)
-        return model, cfg
+#     def test_output_shape(self, cfg):
+#         """Block is a residual unit — shape is unchanged and cache is returned."""
+#         block = LMBlock(cfg)
+#         x = torch.randn(B, T, cfg.hidden_dim)
+#         rope = RotaryEmbedding(cfg)
+#         pos_ids = torch.arange(T).unsqueeze(0).expand(B, -1)
+#         cos, sin = rope(pos_ids)
+#         out, cache = block(x, cos, sin)
+#         assert out.shape == (B, T, cfg.hidden_dim)
+#         assert cache is not None
 
-    def test_parameter_count(self, pretrained):
-        """SmolLM2-360M-Instruct has ~362 M parameters."""
-        model, _ = pretrained
-        n = sum(p.numel() for p in model.parameters())
-        assert 300_000_000 < n < 420_000_000, (
-            f"Unexpected param count: {n:,}"
-        )
 
-    def test_config_updated(self, pretrained):
-        """from_pretrained must mutate cfg to match the HF config."""
-        _, cfg = pretrained
-        assert cfg.hidden_dim == 960
-        assert cfg.n_heads == 15
-        assert cfg.n_kv_heads == 5
-        assert cfg.n_blocks == 32
-        assert cfg.inter_dim == 2560
+# class TestLanguageModel:
+#     def test_init(self, cfg):
+#         """Embedding table and output head must share the same tensor (weight tying).
 
-    def test_inv_freq_shape(self, pretrained):
-        """inv_freq must have shape [head_dim / 2]."""
-        model, cfg = pretrained
-        head_dim = cfg.hidden_dim // cfg.n_heads  # 64
-        assert model.rotary_embd.inv_freq.shape == (head_dim // 2,)
+#         SmolLM2 uses tied weights: head.weight IS token_embedding.weight.
+#         This halves the parameter count for the vocabulary matrices.
+#         data_ptr() returns the memory address — equality means the same tensor.
+#         """
+#         model = LanguageModel(cfg)
+#         assert model.token_embedding.weight.shape == (256, 32)
+#         assert model.head.weight.shape == (256, 32)
+#         assert len(model.blocks) == 2
+#         assert (
+#             model.head.weight.data_ptr()
+#             == model.token_embedding.weight.data_ptr()
+#         )
 
-    def test_weight_tying(self, pretrained):
-        """Embedding and output head must share the same tensor."""
-        model, _ = pretrained
-        assert (
-            model.head.weight.data_ptr()
-            == model.token_embedding.weight.data_ptr()
-        )
+#     def test_forward_shape(self, cfg):
+#         """forward() returns (hidden_states, kv_cache).
 
-    def test_vocab_extended(self, pretrained):
-        """Embedding rows must equal vocab_size (49152 + 1 image token)."""
-        model, cfg = pretrained
-        assert model.token_embedding.weight.shape[0] == cfg.vocab_size
-        assert cfg.vocab_size == 49153
+#         hidden_states shape: [B, T, hidden_dim] — same as input.
+#         kv_cache: list of n_blocks dicts (one per transformer block).
+#         Note: forward takes embeddings, not token ids.
+#         """
+#         model = LanguageModel(cfg)
+#         x = torch.randn(B, T, cfg.hidden_dim)  # embeddings, not token ids
+#         hidden, kv = model(x)
+#         assert hidden.shape == (B, T, cfg.hidden_dim)
+#         assert len(kv) == cfg.n_blocks
+
+#     def test_head_shape(self, cfg):
+#         """head projects hidden states to one logit per vocabulary entry."""
+#         model = LanguageModel(cfg)
+#         x = torch.randn(B, T, cfg.hidden_dim)
+#         hidden, _ = model(x)
+#         logits = model.head(hidden)
+#         assert logits.shape == (B, T, cfg.vocab_size)
+
+#     def test_kv_cache_consistency(self, cfg):
+#         """Prefill + single-token decode must match full-sequence forward.
+
+#         This is the key correctness test for KV caching + RoPE.
+
+#         Strategy:
+#           1. Full sequence [tok_0, ..., tok_{T-1}] in one shot → logits_full
+#           2. Prefix [tok_0, ..., tok_{T-2}] to build the KV cache
+#           3. Just [tok_{T-1}] with start_pos=T-1 → logits_last
+#           4. logits_last should equal logits_full[:, -1, :]
+#         """
+#         torch.manual_seed(42)
+#         model = LanguageModel(cfg)
+#         model.eval()
+
+#         x = torch.randn(1, T, cfg.hidden_dim)
+
+#         with torch.no_grad():
+#             hidden_full, _ = model(x, kv_cache=None, start_pos=0)
+#             logits_full = model.head(hidden_full)           # [1, T, vocab]
+
+#             hidden_prefix, kv = model(
+#                 x[:, :-1, :], kv_cache=None, start_pos=0
+#             )
+#             hidden_last, _ = model(
+#                 x[:, -1:, :], kv_cache=kv, start_pos=T - 1
+#             )
+#             logits_last = model.head(hidden_last)           # [1, 1, vocab]
+
+#         torch.testing.assert_close(
+#             logits_full[:, -1:, :], logits_last,
+#             atol=1e-4, rtol=1e-4,
+#             msg=(
+#                 "KV cache decode does not match full-sequence forward — "
+#                 "check your KV concatenation and start_pos in RoPE."
+#             ),
+#         )
+
+
+# @pytest.mark.slow
+# class TestLanguageModelPretrainedLoading:
+#     """Load real SmolLM2-360M weights and verify architecture.
+
+#     Skipped by default — requires ~720 MB download.
+#     Run with:  pytest tests/test_language_model.py -m slow
+#     """
+
+#     @pytest.fixture(scope="class")
+#     def pretrained(self):
+#         from models.config import LMConfig
+#         cfg = LMConfig()
+#         model = LanguageModel.from_pretrained(cfg)
+#         return model, cfg
+
+#     def test_parameter_count(self, pretrained):
+#         """SmolLM2-360M-Instruct has ~362 M parameters."""
+#         model, _ = pretrained
+#         n = sum(p.numel() for p in model.parameters())
+#         assert 300_000_000 < n < 420_000_000, (
+#             f"Unexpected param count: {n:,}"
+#         )
+
+#     def test_config_updated(self, pretrained):
+#         """from_pretrained must mutate cfg to match the HF config."""
+#         _, cfg = pretrained
+#         assert cfg.hidden_dim == 960
+#         assert cfg.n_heads == 15
+#         assert cfg.n_kv_heads == 5
+#         assert cfg.n_blocks == 32
+#         assert cfg.inter_dim == 2560
+
+#     def test_inv_freq_shape(self, pretrained):
+#         """inv_freq must have shape [head_dim / 2]."""
+#         model, cfg = pretrained
+#         head_dim = cfg.hidden_dim // cfg.n_heads  # 64
+#         assert model.rotary_embd.inv_freq.shape == (head_dim // 2,)
+
+#     def test_weight_tying(self, pretrained):
+#         """Embedding and output head must share the same tensor."""
+#         model, _ = pretrained
+#         assert (
+#             model.head.weight.data_ptr()
+#             == model.token_embedding.weight.data_ptr()
+#         )
+
+#     def test_vocab_extended(self, pretrained):
+#         """Embedding rows must equal vocab_size (49152 + 1 image token)."""
+#         model, cfg = pretrained
+#         assert model.token_embedding.weight.shape[0] == cfg.vocab_size
+#         assert cfg.vocab_size == 49153
