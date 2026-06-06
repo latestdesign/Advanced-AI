@@ -165,7 +165,7 @@ class ViTAttention(nn.Module):
             x = F.scaled_dot_product_attention(q, k, v, is_causal =False)
             
         else:
-            scores = q@k.transpse(-2,-1) / np.sqrt(self.head_dim)
+            scores = q@k.transpose(-2,-1) / np.sqrt(self.head_dim)  # fix: typo transpse -> transpose
             attention_weights = torch.softmax(scores, dim = -1)
             attention_weights  = self.attn_dropout(attention_weights )
             x = attention_weights @v
@@ -198,7 +198,7 @@ class ViTMLP(nn.Module):
         self.activation_fn = nn.GELU(approximate='tanh')    # GELU activation (approximate='tanh')
         self.fc1 = nn.Linear(self.hidden_dim, self.inter_dim)              # Linear: hidden_dim → inter_dim
         self.fc2 = nn.Linear(self.inter_dim, self.hidden_dim)              # Linear: inter_dim → hidden_dim
-        self.dropout = nn.Dropout()         # Dropout
+        self.dropout = nn.Dropout(cfg.dropout)         # fix: pass cfg.dropout (bare nn.Dropout() defaults to p=0.5)
 
 
     def forward(self, x):
@@ -253,7 +253,7 @@ class ViT(nn.Module):
         self.n_blocks   = cfg.n_blocks
         self.hidden_dim = cfg.hidden_dim
         self.patch_embedding = ViTPatchEmbeddings(cfg)  # the ViTPatchEmbeddings sub-module
-        self.dropout = nn.Dropout()         # Dropout
+        self.dropout = nn.Dropout(cfg.dropout)         # fix: pass cfg.dropout (bare nn.Dropout() defaults to p=0.5)
         #nn.ModuleList sert à stocker plusieurs sous-modules PyTorch dans une liste
         self.blocks = nn.ModuleList(ViTBlock(cfg) for i in range(self.n_blocks))         # ModuleList of n_blocks ViTBlock layers
         self.layer_norm = nn.LayerNorm(cfg.hidden_dim, eps=cfg.ln_eps)       # final LayerNorm (hidden_dim, eps=cfg.ln_eps)

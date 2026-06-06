@@ -51,7 +51,7 @@ class RMSNorm(nn.Module):
         # TODO: Compute the inverse RMS of x along the last dimension
         #       (keepdim=True), then scale x by it and the learned weight.
         mean_square = x.pow(2).mean(dim=-1, keepdim=True)
-        out = x * torch.rsqrt(mean_square) * self.weight
+        out = x * torch.rsqrt(mean_square + self.rms_eps) * self.weight  # fix: added rms_eps inside rsqrt (was missing)
         return out
 
 
@@ -129,8 +129,11 @@ class RotaryEmbedding(nn.Module):
         """
         # Step 1, scale inv_freq
         B, T = position_ids.shape
-        scale = self.max_position_embeddings / T
-        inv_freq = self.inv_freq * scale
+        # fix: only scale frequencies down when T exceeds max_position_embeddings (was scaling on every call)
+        if T > self.max_position_embeddings:
+            inv_freq = self.inv_freq * (self.max_position_embeddings / T)
+        else:
+            inv_freq = self.inv_freq
 
         # Step 2, create freq matrix
         pos = position_ids.flatten().unsqueeze(1)
