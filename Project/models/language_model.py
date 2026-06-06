@@ -37,11 +37,9 @@ class RMSNorm(nn.Module):
     def __init__(self, cfg):
         super().__init__()
 
-        # self.weight = ...    # learnable scale of shape [hidden_dim], initialized to
+        self.weight = nn.Parameter(torch.ones(cfg.hidden_dim))    # learnable scale of shape [hidden_dim], initialized to
         #                      # all ones (use nn.Parameter)
-        # self.rms_eps = ...
-
-        raise NotImplementedError
+        self.rms_eps = cfg.rms_eps
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -52,7 +50,9 @@ class RMSNorm(nn.Module):
         """
         # TODO: Compute the inverse RMS of x along the last dimension
         #       (keepdim=True), then scale x by it and the learned weight.
-        raise NotImplementedError
+        mean_square = x.pow(2).mean(dim=-1, keepdim=True)
+        out = x * torch.rsqrt(mean_square) * self.weight
+        return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -127,7 +127,25 @@ class RotaryEmbedding(nn.Module):
         TODO 4 — Compute cosine and sine of the embeddings, scale each by
                  attn_scaling, and return both.
         """
-        raise NotImplementedError
+        # Step 1, scale inv_freq
+        B, T = position_ids.shape
+        scale = self.max_position_embeddings / T
+        inv_freq = self.inv_freq * scale
+
+        # Step 2, create freq matrix
+        pos = position_ids.flatten().unsqueeze(1)
+        inv_freq = inv_freq.unsqueeze(0)
+        freqs = pos * inv_freq
+        freqs = freqs.view(B, T, -1)
+
+        # Step 3, concatenate
+        emb = torch.cat([freqs, freqs], dim=-1)
+
+        # Step 4, compute cos and sine
+        cos = emb.cos() * self.attn_scaling
+        sin = emb.sin() * self.attn_scaling
+
+        return cos, sin
 
 
 def rotate_half(x: torch.Tensor) -> torch.Tensor:
