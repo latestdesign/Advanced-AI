@@ -4,6 +4,10 @@
   <img src="assets/Logo-toulouse-inp-N7.png" alt="Toulouse INP - N7" style="max-height: 120px;">
 </div>
 
+## Instructors:
+- [Paul Novello](https://paulnovello.github.io/)  
+ - [David Bertoin](https://davidbert.github.io/)
+
 Welcome to the **Advanced AI** ModIA course page!
 
 This course will give students the basis to understand modern AI systems, with a focus on implementation and applications. The course is structured around:
