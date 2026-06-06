@@ -1,25 +1,33 @@
+# OS / editor files
 .DS_Store
-.idea
+.idea/
 .ipynb_checkpoints/
-.vscode
-settings.json
+.vscode/
+
+# Python / local environments
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
 *.bin
 *.pkl
-*.pt
+*.pyd
 *.pyc
-input.txt
-env/
-.venv/
+*.pyo
+*.pt
 .aai_env/
 .gradio/
+.venv/
+env/
 site/
+
+# Local project files
+input.txt
+settings.json
+uv.lock
+
+# Course-specific generated or large files
 PP3: CLIP/data/cifar*
-!PP5: Pretraining GPT2/data/french_philosophy/*.bin
-nanoVLM
 PP7: VLM warmup/models/modality_projector_sol.py
 PP7: VLM warmup/models/vision_language_model_sol.py
-uv.lock
+nanoVLM
+
+# Keep this specific dataset artifact tracked
+!PP5: Pretraining GPT2/data/french_philosophy/*.bin
