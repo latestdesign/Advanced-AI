@@ -278,11 +278,13 @@ class LMAttention(nn.Module):
         T_kv = k_exp.size(2)
         is_causal = (T > 1) and (T == T_kv)  # False during single-token decode
         if self.sdpa:
+            sdpa_is_causal = is_causal if attn_mask is None else False
+
             attn = F.scaled_dot_product_attention(
                 q, k_exp, v_exp,
                 attn_mask=attn_mask,
                 dropout_p=self.dropout if self.training else 0.0,
-                is_causal=is_causal
+                is_causal=sdpa_is_causal
             )
         else:
             scores = q @ k_exp.transpose(-2, -1) / (self.head_dim ** 0.5)
@@ -330,7 +332,7 @@ class LMMLP(nn.Module):
         Apply silu to the gate projection, multiply element-wise
         with the up projection, then project back down.
         """
-        
+
         gate = F.silu(self.gate_proj(x))
         value = self.up_proj(x)
 
