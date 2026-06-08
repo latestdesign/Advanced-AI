@@ -19,6 +19,10 @@ The STUDENT SECTION (clearly marked below) is the inner training loop body.
 """
 
 import argparse
+<<<<<<< HEAD
+=======
+import json
+>>>>>>> main
 import math
 import os
 import time
@@ -55,7 +59,14 @@ def get_lr(step: int, max_lr: float, max_steps: int) -> float:
 
 # ── Data loading (PROVIDED) ───────────────────────────────────────────────────
 def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
+<<<<<<< HEAD
     from datasets import load_from_disk
+=======
+    # TODO: fix data leak here!!! train and val are using the exact same split (ds).
+    # need to actually pull raw["validation"] for flickr or do ds.train_test_split()
+    # before wrapping them. otherwise val metrics are completely fake.
+    from datasets import load_from_disk, concatenate_datasets
+>>>>>>> main
 
     if not train_cfg.dataset_local_path:
         raise ValueError(
@@ -66,12 +77,20 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
     tokenizer = get_tokenizer(vlm_cfg.lm.tokenizer, vlm_cfg.image_token)
     image_processor = get_image_processor(vlm_cfg.vit.img_size)
 
+<<<<<<< HEAD
     print(f"Loading dataset from disk: {train_cfg.dataset_local_path}")
     raw = load_from_disk(train_cfg.dataset_local_path)
     # save_to_disk() preserves splits; access the train split
     ds = raw["train"] if "train" in raw else raw
 
     if train_cfg.dataset_type == 'flickr':
+=======
+    if train_cfg.dataset_type == 'flickr':
+        print(f"Loading dataset from disk: {train_cfg.dataset_local_path}")
+        raw = load_from_disk(train_cfg.dataset_local_path)
+        ds = raw["train"] if "train" in raw else raw
+
+>>>>>>> main
         from data.dataset import FlickrDataset
         train_dataset = FlickrDataset(
             ds, tokenizer, image_processor, vlm_cfg
@@ -80,6 +99,31 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
             ds, tokenizer, image_processor, vlm_cfg
         )
     else:
+<<<<<<< HEAD
+=======
+        # Load and concatenate all cauldron subsets
+        splits = []
+        base_path = train_cfg.dataset_local_path
+        for subset in train_cfg.dataset_subsets:
+            subset_path = os.path.join(base_path, subset)
+            if not os.path.exists(subset_path):
+                print(f"  [skip] {subset} not found at {subset_path}")
+                continue
+            print(f"  Loading {subset}...")
+            raw = load_from_disk(subset_path)
+            ds = raw["train"] if "train" in raw else raw
+            splits.append(ds)
+
+        if not splits:
+            raise ValueError(
+                f"No cauldron subsets found under {base_path}/. "
+                "Run prepare_datasets.py first."
+            )
+
+        ds = concatenate_datasets(splits)
+        print(f"Concatenated {len(splits)} subsets → {len(ds)} samples")
+
+>>>>>>> main
         from data.dataset import CauldronDataset
         train_dataset = CauldronDataset(
             ds, tokenizer, image_processor, vlm_cfg
@@ -180,6 +224,10 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
     # ── Training state ────────────────────────────────────────────────────────
     global_step = 0
     best_val_loss = float("inf")
+<<<<<<< HEAD
+=======
+    best_mmstar_acc = -1.0
+>>>>>>> main
     batch_loss = 0.0   # set by the student section each micro-step
     optimizer.zero_grad()
 
@@ -213,6 +261,7 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
         # STUDENT SECTION — implement the training step
         #
         # TODO 1 — Move tensors to device:
+<<<<<<< HEAD
         #     input_ids      = batch["input_ids"].to(device)
         #     pixel_values   = batch["pixel_values"].to(device)
         #     attention_mask = batch["attention_mask"].to(device)
@@ -247,6 +296,42 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
         #     batch_loss = (
         #         loss.item() * train_cfg.gradient_accumulation_steps
         #     )
+=======
+        input_ids      = batch["input_ids"].to(device)
+        pixel_values   = batch["pixel_values"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
+        labels         = batch["labels"].to(device)
+
+        # TODO 2 — Forward pass (inside autocast_ctx for mixed precision):
+        with autocast_ctx:
+            _, loss = model(
+                input_ids, pixel_values, attention_mask, labels
+            )
+
+        # TODO 3 — Scale loss for gradient accumulation:
+        loss = loss / train_cfg.gradient_accumulation_steps
+
+        # TODO 4 — Backward pass:
+        loss.backward()
+
+        # TODO 5 — Optimiser step (only on update steps):
+        if is_update_step:
+            torch.nn.utils.clip_grad_norm_(
+                all_params, train_cfg.max_grad_norm
+            )
+            for g, max_lr in zip(optimizer.param_groups, max_lrs):
+                g["lr"] = get_lr(
+                    global_step, max_lr, train_cfg.max_steps
+                )
+            optimizer.step()
+            optimizer.zero_grad()
+            global_step += 1
+
+        # TODO 6 — Store the unscaled loss for logging:
+        batch_loss = (
+            loss.item() * train_cfg.gradient_accumulation_steps
+        )
+>>>>>>> main
         # ══════════════════════════════════════════════════════════════════════
 
         accum_step += 1
@@ -293,6 +378,63 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
                 model.save_pretrained(ckpt)
                 print(f"  → new best checkpoint saved to {ckpt}")
 
+<<<<<<< HEAD
+=======
+            if (
+                train_cfg.mmstar_val_path
+                and train_cfg.mmstar_eval_interval > 0
+                and global_step % train_cfg.mmstar_eval_interval == 0
+            ):
+                from datasets import load_from_disk
+
+                from eval_mmstar import evaluate_mmstar
+
+                tokenizer = get_tokenizer(vlm_cfg.lm.tokenizer, vlm_cfg.image_token)
+                image_processor = get_image_processor(vlm_cfg.vit.img_size)
+                raw_mmstar = load_from_disk(train_cfg.mmstar_val_path)
+                mmstar_val = raw_mmstar["val"] if "val" in raw_mmstar else raw_mmstar
+                mmstar_metrics = evaluate_mmstar(
+                    model=model,
+                    dataset=mmstar_val,
+                    tokenizer=tokenizer,
+                    image_processor=image_processor,
+                    device=device,
+                    limit=train_cfg.mmstar_eval_limit,
+                    show_progress=False,
+                )
+                mmstar_acc = mmstar_metrics["accuracy"]
+                print(
+                    f"step {global_step:5d} | mmstar_val_acc "
+                    f"{mmstar_acc:.4f}"
+                )
+
+                os.makedirs(train_cfg.mmstar_output_dir, exist_ok=True)
+                mmstar_path = os.path.join(
+                    train_cfg.mmstar_output_dir,
+                    f"mmstar_step{global_step}.json",
+                )
+                with open(mmstar_path, "w") as f:
+                    json.dump(
+                        {
+                            "global_step": global_step,
+                            "checkpoint_dir": train_cfg.checkpoint_dir,
+                            "mmstar_val_path": train_cfg.mmstar_val_path,
+                            "metrics": mmstar_metrics,
+                        },
+                        f,
+                        indent=2,
+                    )
+
+                if mmstar_acc > best_mmstar_acc:
+                    best_mmstar_acc = mmstar_acc
+                    ckpt = os.path.join(
+                        train_cfg.checkpoint_dir,
+                        f"best_mmstar_step{global_step}",
+                    )
+                    model.save_pretrained(ckpt)
+                    print(f"  → new best MMStar checkpoint saved to {ckpt}")
+
+>>>>>>> main
             model.train()
 
     print(f"Training complete. Best val loss: {best_val_loss:.4f}")

@@ -18,6 +18,10 @@ import ssl
 # patch the global SSL context before any download is triggered.
 ssl._create_default_https_context = ssl._create_unverified_context
 
+<<<<<<< HEAD
+=======
+import os
+>>>>>>> main
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -28,7 +32,11 @@ import torchvision.datasets as datasets
 
 # -----------------------------------------------------------------------------
 model_name = "ViT-B/32"  # CLIP model variant
+<<<<<<< HEAD
 device = "cpu"  # 'cpu' or 'cuda'
+=======
+device = "cuda"  # 'cpu' or 'cuda'
+>>>>>>> main
 batch_size = 32  # batch size for feature extraction
 prompt_template = "a photo of a {}."  # {} is replaced by the class name
 data_root = "./data"  # where to download CIFAR-100
@@ -93,22 +101,43 @@ n_correct = 0
 n_total = 0
 
 with torch.no_grad():
+<<<<<<< HEAD
     # TODO:
     # 1. Encode text
     # 2. Normalize encodings
 
+=======
+    # 1. Encode text
+    text_features = model.encode_text(text_tokens)
+    # 2. Normalize encodings
+    text_features = text_features / text_features.norm(dim=1, keepdim=True)
+>>>>>>> main
 
 with torch.no_grad():
     for images, labels in tqdm(test_loader, desc="Zero-shot"):
         images = images.to(device)
         labels = labels.to(device)
 
+<<<<<<< HEAD
         # TODO:
         # 1. Encode images
         # 2. Normalize encodings
         # 3. Compute logits using text_features, 
         # images_features and logit_scale=model.logit_scale.exp()
         # Get the pred id (preds)
+=======
+        # 1. Encode images
+        image_features = model.encode_image(images)
+        # 2. Normalize encodings
+        image_features = image_features / image_features.norm(dim=1, keepdim=True)
+        # 3. Compute logits using text_features,
+        # images_features and logit_scale=model.logit_scale.exp()
+        logit_scale = model.logit_scale.exp()
+        logits_per_image = logit_scale * image_features @ text_features.t()
+
+        # Get the pred id (preds)
+        preds = logits_per_image.argmax(dim=1)
+>>>>>>> main
         n_correct += (preds == labels).sum().item()
         n_total += images.size(0)
 

@@ -29,7 +29,16 @@ class LayerNorm(nn.LayerNorm):
         orig_type = x.dtype
         ret = super().forward(x.type(torch.float32))
         return ret.type(orig_type)
+<<<<<<< HEAD
     
+=======
+
+
+class QuickGELU(nn.Module):
+    def forward(self, x: torch.Tensor):
+        return x * torch.sigmoid(1.702 * x)
+
+>>>>>>> main
 
 class ResidualAttentionBlock(nn.Module):
     """One transformer block: pre-norm multi-head self-attention + pre-norm MLP, both with residual connections.
@@ -57,8 +66,13 @@ class ResidualAttentionBlock(nn.Module):
         self.attn = nn.MultiheadAttention(d_model, n_head)
         self.ln_1 = LayerNorm(d_model)
 
+<<<<<<< HEAD
         c_fc   = # TODO: nn.Linear from d_model to d_model * 4 (the MLP expansion layer)
         c_proj = # TODO: nn.Linear from d_model * 4 back to d_model (the MLP projection layer)
+=======
+        c_fc   = nn.Linear(d_model, d_model * 4)
+        c_proj = nn.Linear(d_model * 4, d_model)
+>>>>>>> main
         self.mlp = nn.Sequential(OrderedDict([
             ("c_fc",   c_fc),
             ("gelu",   QuickGELU()),
@@ -72,8 +86,13 @@ class ResidualAttentionBlock(nn.Module):
         return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
 
     def forward(self, x: torch.Tensor):
+<<<<<<< HEAD
         x = # TODO: attention sub-layer with residual and layer norm
         x = # TODO: MLP sub-layer with residual and layer norm
+=======
+        x = x + self.attention(self.ln_1(x))
+        x = x + self.mlp(self.ln_2(x))
+>>>>>>> main
         return x
 
 
@@ -150,18 +169,29 @@ class VisionTransformer(nn.Module):
         class_embedding = self.class_embedding.to(x.dtype) + torch.zeros(
             x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device
         )
+<<<<<<< HEAD
         x = # TODO: prepend class_embedding as the first token using torch.cat
         #   concatenate along dim=1. Output shape: [batch_size, grid**2 + 1, width]
         x = # TODO: add self.positional_embedding to x (cast positional_embedding to x.dtype)
+=======
+        x = torch.cat([class_embedding, x], dim=1) # Output shape: [batch_size, grid**2 + 1, width]
+        x = x + self.positional_embedding.to(x.dtype)
+>>>>>>> main
         x = self.ln_pre(x)
 
         x = x.permute(1, 0, 2)  # [batch_size, grid ** 2 + 1, width] -> [grid ** 2 + 1, batch_size, width] (required by nn.MultiheadAttention)
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # [grid ** 2 + 1, batch_size, width] -> [batch_size, grid ** 2 + 1, width]
 
+<<<<<<< HEAD
         x = # TODO: apply self.ln_post to the class token only (position 0: x[:, 0, :])
         if self.proj is not None:
             x = # TODO: project x to output_dim using self.proj (matrix multiply: x @ self.proj)
+=======
+        x = self.ln_post(x[:, 0, :])
+        if self.proj is not None:
+            x = x @ self.proj
+>>>>>>> main
         return x
 
 
@@ -250,6 +280,7 @@ class CLIP(nn.Module):
         nn.init.normal_(self.token_embedding.weight, std=0.02)
         nn.init.normal_(self.positional_embedding, std=0.01)
 
+<<<<<<< HEAD
         if isinstance(self.visual, ModifiedResNet):
             if self.visual.attnpool is not None:
                 std = self.visual.attnpool.c_proj.in_features ** -0.5
@@ -263,6 +294,8 @@ class CLIP(nn.Module):
                     if name.endswith("bn3.weight"):
                         nn.init.zeros_(param)
 
+=======
+>>>>>>> main
         proj_std = (self.transformer.width ** -0.5) * ((2 * self.transformer.layers) ** -0.5)
         attn_std = self.transformer.width ** -0.5
         fc_std = (2 * self.transformer.width) ** -0.5
@@ -320,7 +353,11 @@ class CLIP(nn.Module):
         """
         x = self.token_embedding(text).type(self.dtype)  # [batch_size, context_length, transformer_width]
 
+<<<<<<< HEAD
         x = # TODO: add self.positional_embedding to x (cast to self.dtype)
+=======
+        x = x + self.positional_embedding.to(self.dtype)
+>>>>>>> main
         x = x.permute(1, 0, 2)  # [batch_size, context_length, transformer_width] -> [context_length, batch_size, transformer_width]
         x = self.transformer(x)
         x = x.permute(1, 0, 2)  # [context_length, batch_size, transformer_width] -> [batch_size, context_length, transformer_width]
@@ -328,7 +365,11 @@ class CLIP(nn.Module):
 
         # x.shape = [batch_size, context_length, transformer_width]
         # take features from the eot embedding (eot_token is the highest number in each sequence)
+<<<<<<< HEAD
         x = # TODO: index x at the EOT position for each sequence, then project with self.text_projection
+=======
+        x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.text_projection
+>>>>>>> main
         #   Hint: text.argmax(dim=-1) gives the position of the highest token id (= EOT) in each row.
         #   Use x[torch.arange(x.shape[0]), ...] to gather those positions, then matrix-multiply by
         #   self.text_projection.
@@ -356,6 +397,7 @@ class CLIP(nn.Module):
         text_features  = self.encode_text(text)
 
         # normalized features
+<<<<<<< HEAD
         image_features = # TODO: L2-normalize image_features along dim=1 (divide by its norm, keepdim=True)
         text_features  = # TODO: L2-normalize text_features  along dim=1
 
@@ -363,6 +405,15 @@ class CLIP(nn.Module):
         logit_scale = self.logit_scale.exp()
         logits_per_image = # TODO: logit_scale * image_features @ text_features.t()
         logits_per_text  = # TODO: transpose of logits_per_image
+=======
+        image_features = image_features / image_features.norm(dim=1, keepdim=True)
+        text_features  = text_features / text_features.norm(dim=1, keepdim=True)
+
+        # cosine similarity as logits
+        logit_scale = self.logit_scale.exp()
+        logits_per_image = logit_scale * image_features @ text_features.t()
+        logits_per_text  = logits_per_image.t()
+>>>>>>> main
 
         # shape = [batch_size, batch_size]
         return logits_per_image, logits_per_text

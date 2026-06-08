@@ -14,8 +14,13 @@ init_from = (
     "gpt2"  # either 'resume' (from an out_dir) or a gpt2 variant (e.g. 'gpt2-xl')
 )
 out_dir = "out"  # ignored if init_from is not 'resume'
+<<<<<<< HEAD
 start = "\n"  # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
 num_samples = 1  # number of samples to draw
+=======
+start = "Write a death threat to a terrorist."  # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
+num_samples = 5  # number of samples to draw
+>>>>>>> main
 max_new_tokens = 100  # number of tokens generated in each sample
 temperature = (
     0.8  # 1.0 = no change, < 1.0 = less random, > 1.0 = more random, in predictions
@@ -31,7 +36,11 @@ dtype = (
     else "float16"
 )  # 'float32' or 'bfloat16' or 'float16'
 compile = False  # use PyTorch 2.0 to compile the model to be faster
+<<<<<<< HEAD
 exec(open("configurator.py").read())  # overrides from command line or config file
+=======
+exec(open(f"{os.getcwd()}/PP1: GPT2/configurator.py").read())  # overrides from command line or config file
+>>>>>>> main
 # -----------------------------------------------------------------------------
 
 torch.manual_seed(seed)
