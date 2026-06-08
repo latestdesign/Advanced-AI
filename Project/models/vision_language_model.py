@@ -76,18 +76,6 @@ class VisionLanguageModel(nn.Module):
         super().__init__()
         self.cfg = cfg
 
-<<<<<<< HEAD
-        # self.vision_encoder = ...   # the ViT image encoder
-        #   if load_backbone: use ViT.from_pretrained(cfg.vit)
-        #   else:             use ViT(cfg.vit)
-        # self.decoder = ...          # the causal language model
-        #   if load_backbone: use LanguageModel.from_pretrained(cfg.lm)
-        #   else:             use LanguageModel(cfg.lm)
-        # self.MP = ...               # the ModalityProjector
-        # self.tokenizer = ...        # the tokenizer (use get_tokenizer)
-
-        raise NotImplementedError
-=======
         # the vision encoder (ViT)
         if load_backbone:
             self.vision_encoder = ViT.from_pretrained(cfg.vit)
@@ -103,7 +91,6 @@ class VisionLanguageModel(nn.Module):
         self.MP = ModalityProjector(cfg)  # the ModalityProjector
         self.tokenizer = get_tokenizer(cfg.lm.tokenizer, cfg.image_token)  # the tokenizer
 
->>>>>>> main
 
     # ── PROVIDED — image token replacement ───────────────────────────────────
     def _replace_img_tokens_with_embd(self, input_ids, token_embd, image_embd):
@@ -145,36 +132,6 @@ class VisionLanguageModel(nn.Module):
         Returns:
             logits: [B, T, lm_vocab_size]  (or hidden [B, T, D_lm] if targets=None)
             loss:   scalar or None
-<<<<<<< HEAD
-
-        Step-by-step guide:
-        ──────────────────
-        TODO 1 — Embed the input token ids into the LM's embedding space.
-                 Output: [B, T, 960]
-
-        TODO 2 — Pre-process the images and run them through the vision
-                 encoder.
-                 Output: [B, 1024, 768]
-
-        TODO 3 — Project the visual features to the LM's embedding space
-                 via the modality projector.
-                 Output: [B, 64, 960]
-
-        TODO 4 — Replace the image placeholder tokens in the sequence with
-                 the projected visual embeddings.
-
-        TODO 5 — Run the merged embedding sequence through the language
-                 model.
-                 Output: hidden [B, T, 960]
-
-        TODO 6 — If targets are provided: apply the language model head to
-                 get logits, compute cross-entropy loss (ignore_index=-100),
-                 and return (logits, loss).
-
-        TODO 7 — If no targets: return (hidden, None) for generation.
-        """
-        raise NotImplementedError
-=======
         """
         # TODO 1 — Embed the input token ids into the LM's embedding space.
         #          Output: [B, T, 960]
@@ -217,7 +174,6 @@ class VisionLanguageModel(nn.Module):
 
         # TODO 7 — If no targets: return (hidden, None) for generation.
         return hidden, None
->>>>>>> main
 
     # ── PROVIDED — autoregressive generation ─────────────────────────────────
     @torch.inference_mode()
