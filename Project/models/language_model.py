@@ -5,7 +5,7 @@ Architecture overview
   Input embeddings  [B, T, 960]   (provided by the VLM wrapper)
       │
   32 × LMBlock      RMSNorm → LMAttention (GQA + RoPE + KV cache) → residual
-                    RMSNorm → LMMLP (SiLU gate)                    → residual
+                    RMSNorm → LMMLP (SiLU gate)                   → residual
       │  [B, T, 960]
   RMSNorm
       │
@@ -37,9 +37,9 @@ class RMSNorm(nn.Module):
     def __init__(self, cfg):
         super().__init__()
 
-        self.weight = nn.Parameter(torch.ones(cfg.hidden_dim))    # learnable scale of shape [hidden_dim], initialized to
-        #                      # all ones (use nn.Parameter)
-        self.rms_eps = cfg.rms_eps
+        # learnable scale of shape [hidden_dim], initialized to all ones (use nn.Parameter)
+        self.weight = nn.Parameter(torch.ones(cfg.hidden_dim))
+        self.rms_eps = cfg.rms_eps # to avoid divide-by-zero errors when computing the RMS
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -51,7 +51,7 @@ class RMSNorm(nn.Module):
         # TODO: Compute the inverse RMS of x along the last dimension
         #       (keepdim=True), then scale x by it and the learned weight.
         mean_square = x.pow(2).mean(dim=-1, keepdim=True)
-        out = x * torch.rsqrt(mean_square + self.rms_eps) * self.weight  # fix: added rms_eps inside rsqrt (was missing)
+        out = x * torch.rsqrt(mean_square + self.rms_eps) * self.weight
         return out
 
 
@@ -185,24 +185,22 @@ class LMAttention(nn.Module):
     """
     def __init__(self, cfg):
         super().__init__()
-        self.n_heads = cfg.n_heads       # 15
+        self.n_heads = cfg.n_heads        # 15
         self.n_kv_heads = cfg.n_kv_heads  # 5
         self.hidden_dim = cfg.hidden_dim  # 960
         self.dropout = cfg.dropout
 
         assert self.n_heads % self.n_kv_heads == 0
 
-        # self.n_kv_groups = ...   # query heads per KV head (n_heads // n_kv_heads)
-        # self.head_dim = ...      # embedding dimension per attention head
-        # self.q_proj = ...        # Linear: hidden_dim → n_heads × head_dim (no bias)
-        # self.k_proj = ...        # Linear: hidden_dim → n_kv_heads × head_dim (no bias)
-        # self.v_proj = ...        # Linear: same output shape as k_proj (no bias)
-        # self.out_proj = ...      # Linear: hidden_dim → hidden_dim (no bias)
-        # self.attn_dropout = ...  # Dropout on attention weights
-        # self.resid_dropout = ... # Dropout on the output
-        # self.sdpa = ...          # True if F.scaled_dot_product_attention is available
-
-        raise NotImplementedError
+        self.n_kv_groups = self.n_heads // self.n_kv_heads # query heads per KV head (n_heads // n_kv_heads)
+        self.head_dim = self.hidden_dim // self.n_heads  # embedding dimension per attention head
+        self.q_proj = nn.Linear(self.hidden_dim, self.n_heads * self.head_dim, bias=False) # Linear: hidden_dim → n_heads × head_dim (no bias)
+        self.k_proj = nn.Linear(self.hidden_dim, self.n_kv_heads * self.head_dim, bias=False) # Linear: hidden_dim → n_kv_heads × head_dim (no bias)
+        self.v_proj = nn.Linear(self.hidden_dim, self.n_kv_heads * self.head_dim, bias=False) # Linear: same output shape as k_proj (no bias)
+        self.out_proj = nn.Linear(self.n_heads * self.head_dim, self.hidden_dim, bias=False) # Linear: hidden_dim → hidden_dim (no bias)
+        self.attn_dropout = nn.Dropout(self.dropout) # Dropout on attention weights
+        self.resid_dropout = nn.Dropout(self.dropout) # Dropout on the output
+        self.sdpa = hasattr(torch.nn.functional, "scaled_dot_product_attention") # True if F.scaled_dot_product_attention is available
 
     def forward(self, x, cos, sin, attention_mask=None, block_kv_cache=None):
         """
@@ -247,7 +245,65 @@ class LMAttention(nn.Module):
                  into the channel dimension with view. Apply out_proj and
                  resid_dropout, and return together with the updated cache.
         """
-        raise NotImplementedError
+        B, T, _ = x.size()
+
+        # Apply projection matrices, transpose token and head dimensions
+        q = self.q_proj(x).view(B, T, self.n_heads, self.head_dim).transpose(1, 2)
+        k = self.k_proj(x).view(B, T, self.n_kv_heads, self.head_dim).transpose(1, 2)
+        v = self.v_proj(x).view(B, T, self.n_kv_heads, self.head_dim).transpose(1, 2)
+
+        # Apply rotary positional embeddings to queries and keys
+        # By the way, we rotate first, then repeat heads: less operations!
+        q, k = apply_rotary_pos_embd(q, k, cos, sin)
+
+        # Update KV cache
+        if block_kv_cache is None:
+            block_kv_cache = {'key': k, 'value': v}
+        else:
+            block_kv_cache['key'] = torch.cat([block_kv_cache['key'], k], dim=2)
+            block_kv_cache['value'] = torch.cat([block_kv_cache['value'], v], dim=2)
+
+        # Repeat KV heads to match the number of query heads
+        k_exp = block_kv_cache['key'].repeat_interleave(self.n_kv_groups, dim=1)
+        v_exp = block_kv_cache['value'].repeat_interleave(self.n_kv_groups, dim=1)
+
+        # Additive mask setup
+        if attention_mask is not None:
+            # The [:, None, None, :] trick is equivalent to unsqueezing twice
+            attn_mask = (1.0 - attention_mask[:, None, None, :]) * torch.finfo(q.dtype).min
+        else:
+            attn_mask = None
+
+        # Apply scaled dot-product attention
+        T_kv = k_exp.size(2)
+        is_causal = (T > 1) and (T == T_kv)  # False during single-token decode
+        if self.sdpa:
+            attn = F.scaled_dot_product_attention(
+                q, k_exp, v_exp,
+                attn_mask=attn_mask,
+                dropout_p=self.dropout if self.training else 0.0,
+                is_causal=is_causal
+            )
+        else:
+            scores = q @ k_exp.transpose(-2, -1) / (self.head_dim ** 0.5)
+
+            if is_causal:
+                causal = torch.triu(torch.ones(T, T_kv, dtype=torch.bool, device=q.device), diagonal=1)
+                scores = scores.masked_fill(causal, torch.finfo(q.dtype).min)
+
+            if attention_mask is not None:
+                scores = scores + attn_mask
+
+            attn = torch.softmax(scores, dim=-1)
+            attn = self.attn_dropout(attn)
+            attn = attn @ v_exp
+
+        # Reshape and project output
+        attn = attn.transpose(1, 2).contiguous().view(B, T, self.n_heads * self.head_dim)
+        out = self.out_proj(attn)
+        out = self.resid_dropout(out)
+
+        return out, block_kv_cache
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -262,12 +318,9 @@ class LMMLP(nn.Module):
     """
     def __init__(self, cfg):
         super().__init__()
-
-        # self.gate_proj = ...   # Linear: hidden_dim → inter_dim, no bias (gate branch)
-        # self.up_proj = ...     # Linear: hidden_dim → inter_dim, no bias (value branch)
-        # self.down_proj = ...   # Linear: inter_dim → hidden_dim, no bias
-
-        raise NotImplementedError
+        self.gate_proj = nn.Linear(cfg.hidden_dim, cfg.inter_dim, bias=False)   # Linear: hidden_dim → inter_dim, no bias (gate branch)
+        self.up_proj = nn.Linear(cfg.hidden_dim, cfg.inter_dim, bias=False)     # Linear: hidden_dim → inter_dim, no bias (value branch)
+        self.down_proj = nn.Linear(cfg.inter_dim, cfg.hidden_dim, bias=False)   # Linear: inter_dim → hidden_dim, no bias
 
     def forward(self, x):
         """
@@ -276,7 +329,7 @@ class LMMLP(nn.Module):
         TODO: Apply silu to the gate projection, multiply element-wise
               with the up projection, then project back down.
         """
-        raise NotImplementedError
+        return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -285,12 +338,10 @@ class LMBlock(nn.Module):
     def __init__(self, cfg):
         super().__init__()
 
-        # self.norm1 = ...   # RMSNorm applied before attention
-        # self.attn = ...    # the LMAttention sub-layer
-        # self.norm2 = ...   # RMSNorm applied before the MLP
-        # self.mlp = ...     # the LMMLP sub-layer
-
-        raise NotImplementedError
+        self.norm1 = RMSNorm(cfg)     # RMSNorm applied before attention
+        self.attn = LMAttention(cfg)  # the LMAttention sub-layer
+        self.norm2 = RMSNorm(cfg)     # RMSNorm applied before the MLP
+        self.mlp = LMMLP(cfg)         # the LMMLP sub-layer
 
     def forward(self, x, cos, sin, attention_mask=None, block_kv_cache=None):
         """
@@ -307,7 +358,11 @@ class LMBlock(nn.Module):
         attention returns a (output, cache) tuple — unpack it.
         """
         # TODO: Two pre-norm residual sub-layers (attention, then MLP).
-        raise NotImplementedError
+        attn_output, block_kv_cache = self.attn(self.norm1(x), cos, sin, \
+                                                attention_mask, block_kv_cache)
+        x = x + attn_output
+        x = self.mlp(self.norm2(x)) + x
+        return x, block_kv_cache
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -324,16 +379,15 @@ class LanguageModel(nn.Module):
         super().__init__()
         self.cfg = cfg
         self.tie_weights = cfg.tie_weights
-
-        # self.token_embedding = ...  # Embedding table: vocab_size → hidden_dim
-        # self.rotary_embd = ...      # the RotaryEmbedding module
-        # self.blocks = ...           # ModuleList of n_blocks LMBlock layers
-        # self.norm = ...             # final RMSNorm
-        # self.head = ...             # Linear: hidden_dim → vocab_size (no bias)
+        self.token_embedding = nn.Embedding(cfg.vocab_size, cfg.hidden_dim)  # Embedding table: vocab_size → hidden_dim
+        self.rotary_embd = RotaryEmbedding(cfg) # the RotaryEmbedding module
+        self.blocks = nn.ModuleList([LMBlock(cfg) for _ in range(cfg.n_blocks)])  # ModuleList of n_blocks LMBlock layers
+        self.norm = RMSNorm(cfg)  # final RMSNorm
+        self.head = nn.Linear(cfg.hidden_dim, cfg.vocab_size, bias=False)  # Linear: hidden_dim → vocab_size (no bias)
 
         # If self.tie_weights, share the token embedding weights with the head
-
-        raise NotImplementedError
+        if self.tie_weights:
+            self.head.weight = self.token_embedding.weight
 
         self.apply(self._init_weights)
 
@@ -382,7 +436,22 @@ class LanguageModel(nn.Module):
 
         TODO 6: Return the hidden states and the updated KV cache.
         """
-        raise NotImplementedError
+        B, T, _ = x.size()
+
+        # Compute RoPE embeddings for the current positions
+        position_ids = torch.arange(start_pos, start_pos + T, device=x.device).unsqueeze(0).expand(B, T)
+        cos, sin = self.rotary_embd(position_ids)
+
+        # Initialize KV cache if not provided
+        if kv_cache is None:
+            kv_cache = [None] * len(self.blocks)
+
+        # Loop over blocks
+        for i, block in enumerate(self.blocks):
+            x, kv_cache[i] = block(x, cos, sin, attention_mask, kv_cache[i])
+        x = self.norm(x)
+
+        return x, kv_cache
 
     # ── Provided: greedy generation for the standalone LM ────────────────────
     @torch.inference_mode()
