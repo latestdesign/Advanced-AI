@@ -55,6 +55,9 @@ def get_lr(step: int, max_lr: float, max_steps: int) -> float:
 
 # ── Data loading (PROVIDED) ───────────────────────────────────────────────────
 def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
+    # TODO: fix data leak here!!! train and val are using the exact same split (ds).
+    # need to actually pull raw["validation"] for flickr or do ds.train_test_split()
+    # before wrapping them. otherwise val metrics are completely fake.
     from datasets import load_from_disk, concatenate_datasets
 
     if not train_cfg.dataset_local_path:
@@ -234,40 +237,40 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
         # STUDENT SECTION — implement the training step
         #
         # TODO 1 — Move tensors to device:
-        #     input_ids      = batch["input_ids"].to(device)
-        #     pixel_values   = batch["pixel_values"].to(device)
-        #     attention_mask = batch["attention_mask"].to(device)
-        #     labels         = batch["labels"].to(device)
-        #
+        input_ids      = batch["input_ids"].to(device)
+        pixel_values   = batch["pixel_values"].to(device)
+        attention_mask = batch["attention_mask"].to(device)
+        labels         = batch["labels"].to(device)
+
         # TODO 2 — Forward pass (inside autocast_ctx for mixed precision):
-        #     with autocast_ctx:
-        #         _, loss = model(
-        #             input_ids, pixel_values, attention_mask, labels
-        #         )
-        #
+        with autocast_ctx:
+            _, loss = model(
+                input_ids, pixel_values, attention_mask, labels
+            )
+
         # TODO 3 — Scale loss for gradient accumulation:
-        #     loss = loss / train_cfg.gradient_accumulation_steps
-        #
+        loss = loss / train_cfg.gradient_accumulation_steps
+
         # TODO 4 — Backward pass:
-        #     loss.backward()
-        #
+        loss.backward()
+
         # TODO 5 — Optimiser step (only on update steps):
-        #     if is_update_step:
-        #         torch.nn.utils.clip_grad_norm_(
-        #             all_params, train_cfg.max_grad_norm
-        #         )
-        #         for g, max_lr in zip(optimizer.param_groups, max_lrs):
-        #             g["lr"] = get_lr(
-        #                 global_step, max_lr, train_cfg.max_steps
-        #             )
-        #         optimizer.step()
-        #         optimizer.zero_grad()
-        #         global_step += 1
-        #
+        if is_update_step:
+            torch.nn.utils.clip_grad_norm_(
+                all_params, train_cfg.max_grad_norm
+            )
+            for g, max_lr in zip(optimizer.param_groups, max_lrs):
+                g["lr"] = get_lr(
+                    global_step, max_lr, train_cfg.max_steps
+                )
+            optimizer.step()
+            optimizer.zero_grad()
+            global_step += 1
+
         # TODO 6 — Store the unscaled loss for logging:
-        #     batch_loss = (
-        #         loss.item() * train_cfg.gradient_accumulation_steps
-        #     )
+        batch_loss = (
+            loss.item() * train_cfg.gradient_accumulation_steps
+        )
         # ══════════════════════════════════════════════════════════════════════
 
         accum_step += 1
