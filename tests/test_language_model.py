@@ -105,54 +105,54 @@ class TestRotaryEmbedding:
         assert rope.re_base == 10000
 
 
-# class TestLMAttention:
-#     def test_init(self, cfg):
-#         """GQA projections: q is full width, k/v use n_kv_heads × head_dim.
+class TestLMAttention:
+    def test_init(self, cfg):
+        """GQA projections: q is full width, k/v use n_kv_heads × head_dim.
 
-#         With n_heads=4, n_kv_heads=2, head_dim=8:
-#             q_proj : Linear(32 → 32)   weight (32, 32)
-#             k_proj : Linear(32 → 16)   weight (16, 32)   16 = 2×8
-#             v_proj : Linear(32 → 16)   weight (16, 32)
-#             out_proj: Linear(32 → 32)  weight (32, 32)
-#         All projections are bias-free (SmolLM2 convention).
-#         n_kv_groups = n_heads // n_kv_heads = 2.
-#         head_dim = hidden_dim // n_heads = 8.
-#         """
-#         attn = LMAttention(cfg)
-#         assert attn.head_dim == 8
-#         assert attn.n_kv_groups == 2
-#         assert attn.q_proj.weight.shape == (32, 32)
-#         assert attn.k_proj.weight.shape == (16, 32)
-#         assert attn.v_proj.weight.shape == (16, 32)
-#         assert attn.out_proj.weight.shape == (32, 32)
-#         assert attn.q_proj.bias is None
+        With n_heads=4, n_kv_heads=2, head_dim=8:
+            q_proj : Linear(32 → 32)   weight (32, 32)
+            k_proj : Linear(32 → 16)   weight (16, 32)   16 = 2×8
+            v_proj : Linear(32 → 16)   weight (16, 32)
+            out_proj: Linear(32 → 32)  weight (32, 32)
+        All projections are bias-free (SmolLM2 convention).
+        n_kv_groups = n_heads // n_kv_heads = 2.
+        head_dim = hidden_dim // n_heads = 8.
+        """
+        attn = LMAttention(cfg)
+        assert attn.head_dim == 8
+        assert attn.n_kv_groups == 2
+        assert attn.q_proj.weight.shape == (32, 32)
+        assert attn.k_proj.weight.shape == (16, 32)
+        assert attn.v_proj.weight.shape == (16, 32)
+        assert attn.out_proj.weight.shape == (32, 32)
+        assert attn.q_proj.bias is None
 
-#     def test_output_shape_prefill(self, cfg):
-#         """Prefill (no cache): output shape matches input, cache has key/value."""
-#         attn = LMAttention(cfg)
-#         x = torch.randn(B, T, cfg.hidden_dim)
-#         rope = RotaryEmbedding(cfg)
-#         pos_ids = torch.arange(T).unsqueeze(0).expand(B, -1)
-#         cos, sin = rope(pos_ids)
-#         out, cache = attn(x, cos, sin, block_kv_cache=None)
-#         assert out.shape == (B, T, cfg.hidden_dim)
-#         assert 'key' in cache and 'value' in cache
+    def test_output_shape_prefill(self, cfg):
+        """Prefill (no cache): output shape matches input, cache has key/value."""
+        attn = LMAttention(cfg)
+        x = torch.randn(B, T, cfg.hidden_dim)
+        rope = RotaryEmbedding(cfg)
+        pos_ids = torch.arange(T).unsqueeze(0).expand(B, -1)
+        cos, sin = rope(pos_ids)
+        out, cache = attn(x, cos, sin, block_kv_cache=None)
+        assert out.shape == (B, T, cfg.hidden_dim)
+        assert 'key' in cache and 'value' in cache
 
-#     def test_kv_cache_shape(self, cfg):
-#         """Cached K and V must be [B, n_kv_heads, T, head_dim].
+    def test_kv_cache_shape(self, cfg):
+        """Cached K and V must be [B, n_kv_heads, T, head_dim].
 
-#         Note: only n_kv_heads (not n_heads) KV pairs are stored — that is
-#         the whole point of Grouped-Query Attention.
-#         """
-#         attn = LMAttention(cfg)
-#         x = torch.randn(B, T, cfg.hidden_dim)
-#         rope = RotaryEmbedding(cfg)
-#         pos_ids = torch.arange(T).unsqueeze(0).expand(B, -1)
-#         cos, sin = rope(pos_ids)
-#         _, cache = attn(x, cos, sin, block_kv_cache=None)
-#         head_dim = cfg.hidden_dim // cfg.n_heads
-#         assert cache['key'].shape == (B, cfg.n_kv_heads, T, head_dim)
-#         assert cache['value'].shape == (B, cfg.n_kv_heads, T, head_dim)
+        Note: only n_kv_heads (not n_heads) KV pairs are stored — that is
+        the whole point of Grouped-Query Attention.
+        """
+        attn = LMAttention(cfg)
+        x = torch.randn(B, T, cfg.hidden_dim)
+        rope = RotaryEmbedding(cfg)
+        pos_ids = torch.arange(T).unsqueeze(0).expand(B, -1)
+        cos, sin = rope(pos_ids)
+        _, cache = attn(x, cos, sin, block_kv_cache=None)
+        head_dim = cfg.hidden_dim // cfg.n_heads
+        assert cache['key'].shape == (B, cfg.n_kv_heads, T, head_dim)
+        assert cache['value'].shape == (B, cfg.n_kv_heads, T, head_dim)
 
 
 # class TestLMMLp:
