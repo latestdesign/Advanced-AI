@@ -1,12 +1,16 @@
-# Welcome
+
+<div style="display: flex; align-items: center; justify-content: center; gap: 2rem; margin-bottom: 1rem;">
+  <img src="assets/INSA-toulouse.jpg" alt="INSA Toulouse" style="max-height: 240px;">
+  <img src="assets/Logo-toulouse-inp-N7.png" alt="Toulouse INP - N7" style="max-height: 120px;">
+</div>
 
 Welcome to the **Advanced AI** ModIA course page!
 
 This course will give students the basis to understand modern AI systems, with a focus on implementation and applications. The course is structured around:
 
-  - Lectures
-  - Practical programming sessions 
-  - One project that will start mid-semester.
+- Lectures
+- Practical programming sessions 
+- One project that will start mid-semester.
 
 In this course, you will learn about modern LLMs, VLMs, Self-Supervised Learning, and Reinforcement Learning involved in LLM training. 
 
@@ -81,7 +85,7 @@ source ./aai_env/bin/activate  # macOS/Linux
 ```
 or
 ```bash
-.\aai_env\bin\activate    # Windows
+.\aai_env\Scripts\activate    # Windows
 ```
 
 or use uv's run command to execute scripts within the environment without activating it:

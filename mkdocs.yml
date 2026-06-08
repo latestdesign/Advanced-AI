@@ -1,0 +1,56 @@
+site_name: ModIA Advanced AI
+site_description: ModIA Advanced AI Practical Programming Documentation
+site_url: https://paulnovello.github.io/Advanced-AI/
+repo_url: https://github.com/paulnovello/Advanced-AI
+repo_name: paulnovello/Advanced-AI
+
+theme:
+  name: material
+  icon:
+    logo: material/school
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+
+nav:
+  - Welcome: index.md
+  - Programming Practicals:
+      - "PP1: GPT-2": practicals/pp1-gpt2.md
+      - "PP2: Vision": practicals/pp2-vision.md
+      - "PP3: CLIP": practicals/pp3-clip.md
+      - "PP4: Tokenizer": practicals/pp4-tokenizer.md
+      - "PP5: Pretraining GPT2": practicals/pp5-pretraining.md
+      - "PP6: Self-Supervised Learning": practicals/pp6-ssl.md
+      - "PP7: VLM Warmup": practicals/pp7-vlm-warmup.md
+  - Lecture Notes: lecture_notes.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - footnotes
+  - toc:
+      permalink: true
+
+extra_javascript:
+  - https://unpkg.com/mermaid@10/dist/mermaid.min.js
+  - javascripts/mermaid-init.js
