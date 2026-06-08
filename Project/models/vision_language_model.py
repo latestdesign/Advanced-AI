@@ -76,16 +76,21 @@ class VisionLanguageModel(nn.Module):
         super().__init__()
         self.cfg = cfg
 
-        # self.vision_encoder = ...   # the ViT image encoder
-        #   if load_backbone: use ViT.from_pretrained(cfg.vit)
-        #   else:             use ViT(cfg.vit)
-        # self.decoder = ...          # the causal language model
-        #   if load_backbone: use LanguageModel.from_pretrained(cfg.lm)
-        #   else:             use LanguageModel(cfg.lm)
-        # self.MP = ...               # the ModalityProjector
-        # self.tokenizer = ...        # the tokenizer (use get_tokenizer)
+        # the vision encoder (ViT)
+        if load_backbone:
+            self.vision_encoder = ViT.from_pretrained(cfg.vit)
+        else:
+            self.vision_encoder = ViT(cfg.vit)
 
-        raise NotImplementedError
+        # the causal language model
+        if load_backbone:
+            self.decoder = LanguageModel.from_pretrained(cfg.lm)
+        else:
+            self.decoder = LanguageModel(cfg.lm)
+
+        self.MP = ModalityProjector(cfg)  # the ModalityProjector
+        self.tokenizer = get_tokenizer(cfg.lm.tokenizer, cfg.image_token)  # the tokenizer
+
 
     # ── PROVIDED — image token replacement ───────────────────────────────────
     def _replace_img_tokens_with_embd(self, input_ids, token_embd, image_embd):
@@ -127,34 +132,48 @@ class VisionLanguageModel(nn.Module):
         Returns:
             logits: [B, T, lm_vocab_size]  (or hidden [B, T, D_lm] if targets=None)
             loss:   scalar or None
-
-        Step-by-step guide:
-        ──────────────────
-        TODO 1 — Embed the input token ids into the LM's embedding space.
-                 Output: [B, T, 960]
-
-        TODO 2 — Pre-process the images and run them through the vision
-                 encoder.
-                 Output: [B, 1024, 768]
-
-        TODO 3 — Project the visual features to the LM's embedding space
-                 via the modality projector.
-                 Output: [B, 64, 960]
-
-        TODO 4 — Replace the image placeholder tokens in the sequence with
-                 the projected visual embeddings.
-
-        TODO 5 — Run the merged embedding sequence through the language
-                 model.
-                 Output: hidden [B, T, 960]
-
-        TODO 6 — If targets are provided: apply the language model head to
-                 get logits, compute cross-entropy loss (ignore_index=-100),
-                 and return (logits, loss).
-
-        TODO 7 — If no targets: return (hidden, None) for generation.
         """
-        raise NotImplementedError
+        # TODO 1 — Embed the input token ids into the LM's embedding space.
+        #          Output: [B, T, 960]
+        token_embd = self.decoder.token_embedding(input_ids)
+
+        # TODO 2 — Pre-process the images and run them through the vision
+        #          encoder.
+        #          Output: [B, 1024, 768]
+        images = self._process_images(pixel_values, input_ids.device)
+        image_feats = self.vision_encoder(images)
+
+        # TODO 3 — Project the visual features to the LM's embedding space
+        #          via the modality projector.
+        #          Output: [B, 64, 960]
+        image_embd = self.MP(image_feats)
+
+        # TODO 4 — Replace the image placeholder tokens in the sequence with
+        #          the projected visual embeddings.
+        token_embd = self._replace_img_tokens_with_embd(input_ids, token_embd, image_embd)
+
+        # TODO 5 — Run the merged embedding sequence through the language
+        #          model.
+        #          Output: hidden [B, T, 960]
+        hidden, _ = self.decoder(token_embd, attention_mask=attention_mask)
+
+        # TODO 6 — If targets are provided: apply the language model head to
+        #          get logits, compute cross-entropy loss (ignore_index=-100),
+        #          and return (logits, loss).
+        if targets is not None:
+            logits = self.decoder.head(hidden)
+            # shift so position t predicts token t+1 (labels are aligned with input_ids)
+            shift_logits = logits[:, :-1, :]
+            shift_targets = targets[:, 1:]
+            loss = F.cross_entropy(
+                shift_logits.reshape(-1, shift_logits.size(-1)),
+                shift_targets.reshape(-1),
+                ignore_index=-100,
+            )
+            return logits, loss
+
+        # TODO 7 — If no targets: return (hidden, None) for generation.
+        return hidden, None
 
     # ── PROVIDED — autoregressive generation ─────────────────────────────────
     @torch.inference_mode()
