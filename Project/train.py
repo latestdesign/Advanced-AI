@@ -19,10 +19,7 @@ The STUDENT SECTION (clearly marked below) is the inner training loop body.
 """
 
 import argparse
-<<<<<<< HEAD
-=======
 import json
->>>>>>> main
 import math
 import os
 import time
