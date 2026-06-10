@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-import os
 from typing import Tuple
 
 
@@ -249,10 +248,3 @@ class TrainConfig:
 
     # Whether to apply torch.compile() to the model for potential speedup
     compile: bool = False
-
-    def __post_init__(self):
-        # Auto-append dataset type/subset to base path if not already present
-        if self.dataset_type == 'flickr' and not self.dataset_local_path.endswith('flickr30k'):
-            self.dataset_local_path = os.path.join(self.dataset_local_path, 'flickr30k')
-        elif self.dataset_type == 'cauldron' and 'the_cauldron' not in self.dataset_local_path:
-            self.dataset_local_path = os.path.join(self.dataset_local_path, 'the_cauldron')

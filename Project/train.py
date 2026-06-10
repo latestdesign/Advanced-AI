@@ -57,9 +57,6 @@ def get_lr(step: int, max_lr: float, max_steps: int, warmup_fraction: float) -> 
 
 # ── Data loading (PROVIDED) ───────────────────────────────────────────────────
 def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
-    # TODO: fix data leak here!!! train and val are using the exact same split (ds).
-    # need to actually pull raw["validation"] for flickr or do ds.train_test_split()
-    # before wrapping them. otherwise val metrics are completely fake.
     from datasets import load_from_disk, concatenate_datasets
 
     if not train_cfg.dataset_local_path:
@@ -68,6 +65,14 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
             "Run prepare_datasets.py first, then set --dataset_local_path."
         )
 
+    # Resolve the dataset folder under the base path (idempotent; runs here so it
+    # survives CLI overrides of dataset_type, unlike a dataclass __post_init__).
+    dtype = train_cfg.dataset_type
+    if dtype in ('flickr', 'flickr30k') and not train_cfg.dataset_local_path.rstrip('/').endswith('flickr30k'):
+        train_cfg.dataset_local_path = os.path.join(train_cfg.dataset_local_path, 'flickr30k')
+    elif dtype == 'cauldron' and 'the_cauldron' not in train_cfg.dataset_local_path:
+        train_cfg.dataset_local_path = os.path.join(train_cfg.dataset_local_path, 'the_cauldron')
+
     tokenizer = get_tokenizer(vlm_cfg.lm.tokenizer, vlm_cfg.image_token)
     image_processor = get_image_processor(vlm_cfg.vit.img_size)
 
@@ -75,9 +80,12 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
         print(f"Loading dataset from disk: {train_cfg.dataset_local_path}")
         raw = load_from_disk(train_cfg.dataset_local_path)
         ds = raw["train"] if "train" in raw else raw
-        split = ds.train_test_split(test_size=0.1, seed=42, shuffle=True, keep_in_memory=True)
-        train_ds = split["train"]
-        val_ds = split["test"]
+        indices = np.random.RandomState(42).permutation(len(ds))
+        n_val = int(0.1 * len(ds))
+        # keep_in_memory: index mapping stays in RAM, so no cache write to the
+        # read-only shared dataset dir on Turpan
+        val_ds = ds.select(indices[:n_val], keep_in_memory=True)
+        train_ds = ds.select(indices[n_val:], keep_in_memory=True)
 
         from data.dataset import FlickrDataset
         train_dataset = FlickrDataset(
@@ -117,12 +125,7 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
 
         val_idx = indices[:n_val]
         train_idx = indices[n_val:]
-        
-        #split = ds.train_test_split(test_size=0.1, seed=42, shuffle=True, keep_in_memory=True)
 
-        #train_ds = split["train"]
-        #val_ds = split["test"]
-        
         train_ds = ds.select(train_idx, keep_in_memory=True)
         val_ds = ds.select(val_idx, keep_in_memory=True)
 
@@ -145,7 +148,7 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
         train_dataset,
         batch_size=train_cfg.batch_size,
         collate_fn=collator,
-        num_workers=2,
+        num_workers=1,
         pin_memory=True,
     )
     val_loader = DataLoader(

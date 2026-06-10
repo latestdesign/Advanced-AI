@@ -39,6 +39,7 @@ def test_train_loads_flickr_dataset_from_disk(tmp_path, monkeypatch):
                         "image": "image-placeholder",
                         "original_alt_text": ["a caption"],
                     }
+                    for _ in range(10)
                 ]
             )
         }
@@ -53,8 +54,11 @@ def test_train_loads_flickr_dataset_from_disk(tmp_path, monkeypatch):
 
     assert isinstance(train_loader.dataset, FlickrDataset)
     assert isinstance(val_loader.dataset, FlickrDataset)
-    assert len(train_loader.dataset.dataset) == 1
-    assert len(val_loader.dataset.dataset) == 1
+    # train/val are now a disjoint split (leak fix), so check the partition not equality
+    n_train = len(train_loader.dataset.dataset)
+    n_val = len(val_loader.dataset.dataset)
+    assert n_train + n_val == 10
+    assert n_train > 0 and n_val > 0
 
 
 def test_train_loads_cauldron_subsets_from_disk(tmp_path, monkeypatch):
@@ -69,6 +73,7 @@ def test_train_loads_cauldron_subsets_from_disk(tmp_path, monkeypatch):
                         "images": ["image-placeholder"],
                         "texts": [{"user": "question", "assistant": "answer"}],
                     }
+                    for _ in range(10)
                 ]
             )
         }
@@ -84,8 +89,11 @@ def test_train_loads_cauldron_subsets_from_disk(tmp_path, monkeypatch):
 
     assert isinstance(train_loader.dataset, CauldronDataset)
     assert isinstance(val_loader.dataset, CauldronDataset)
-    assert len(train_loader.dataset.dataset) == 1
-    assert len(val_loader.dataset.dataset) == 1
+    # train/val are now a disjoint split (leak fix), so check the partition not equality
+    n_train = len(train_loader.dataset.dataset)
+    n_val = len(val_loader.dataset.dataset)
+    assert n_train + n_val == 10
+    assert n_train > 0 and n_val > 0
 
 
 def test_train_mmstar_validation_loads_val_split_from_disk(tmp_path):
