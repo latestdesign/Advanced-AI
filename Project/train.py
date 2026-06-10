@@ -23,6 +23,7 @@ import json
 import math
 import os
 import time
+import numpy as np
 from dataclasses import fields
 
 import torch
@@ -70,17 +71,20 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
     tokenizer = get_tokenizer(vlm_cfg.lm.tokenizer, vlm_cfg.image_token)
     image_processor = get_image_processor(vlm_cfg.vit.img_size)
 
-    if train_cfg.dataset_type == 'flickr':
+    if train_cfg.dataset_type == 'flickr30k' or train_cfg.dataset_type == 'flickr':
         print(f"Loading dataset from disk: {train_cfg.dataset_local_path}")
         raw = load_from_disk(train_cfg.dataset_local_path)
         ds = raw["train"] if "train" in raw else raw
+        split = ds.train_test_split(test_size=0.1, seed=42, shuffle=True, keep_in_memory=True)
+        train_ds = split["train"]
+        val_ds = split["test"]
 
         from data.dataset import FlickrDataset
         train_dataset = FlickrDataset(
-            ds, tokenizer, image_processor, vlm_cfg
+            train_ds, tokenizer, image_processor, vlm_cfg
         )
         val_dataset = FlickrDataset(
-            ds, tokenizer, image_processor, vlm_cfg
+            val_ds, tokenizer, image_processor, vlm_cfg
         )
     else:
         # Load and concatenate all cauldron subsets
@@ -104,13 +108,35 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
 
         ds = concatenate_datasets(splits)
         print(f"Concatenated {len(splits)} subsets → {len(ds)} samples")
+        
+        n = len(ds)
+
+        indices = np.random.RandomState(42).permutation(n)
+
+        n_val = int(0.1 * n)
+
+        val_idx = indices[:n_val]
+        train_idx = indices[n_val:]
+        
+        #split = ds.train_test_split(test_size=0.1, seed=42, shuffle=True, keep_in_memory=True)
+
+        #train_ds = split["train"]
+        #val_ds = split["test"]
+        
+        train_ds = ds.select(train_idx, keep_in_memory=True)
+        val_ds = ds.select(val_idx, keep_in_memory=True)
+
+        print(
+            f"Train samples: {len(train_ds)} | "
+            f"Validation samples: {len(val_ds)}"
+        )
 
         from data.dataset import CauldronDataset
         train_dataset = CauldronDataset(
-            ds, tokenizer, image_processor, vlm_cfg
+            train_ds, tokenizer, image_processor, vlm_cfg
         )
         val_dataset = CauldronDataset(
-            ds, tokenizer, image_processor, vlm_cfg
+            val_ds, tokenizer, image_processor, vlm_cfg
         )
 
     collator = VQACollator(tokenizer, max_length=train_cfg.max_length)
@@ -281,7 +307,7 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
         if is_update_step and global_step % train_cfg.log_interval == 0:
             elapsed = time.time() - t0
             print(
-                f"step {global_step:5d} | loss {batch_loss:.4f}"
+                f"step {global_step:6d} | loss {batch_loss:.6f}"
                 f" | {elapsed:.1f}s"
             )
 
@@ -309,7 +335,7 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
                 sum(val_losses) / len(val_losses)
                 if val_losses else float("nan")
             )
-            print(f"step {global_step:5d} | val_loss {avg_val:.4f}")
+            print(f"step {global_step:6d} | val_loss {avg_val:.6f}")
 
             if avg_val < best_val_loss:
                 best_val_loss = avg_val
@@ -343,8 +369,8 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
                 )
                 mmstar_acc = mmstar_metrics["accuracy"]
                 print(
-                    f"step {global_step:5d} | mmstar_val_acc "
-                    f"{mmstar_acc:.4f}"
+                    f"step {global_step:6d} | mmstar_val_acc "
+                    f"{mmstar_acc:.6f}"
                 )
 
                 os.makedirs(train_cfg.mmstar_output_dir, exist_ok=True)
