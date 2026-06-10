@@ -50,8 +50,8 @@ class RMSNorm(nn.Module):
         """
         # TODO: Compute the inverse RMS of x along the last dimension
         #       (keepdim=True), then scale x by it and the learned weight.
-        mean_square = x.pow(2).mean(dim=-1, keepdim=True)
-        out = x * torch.rsqrt(mean_square + self.rms_eps) * self.weight
+        mean_square = x.float().pow(2).mean(dim=-1, keepdim=True)
+        out = x * torch.rsqrt(mean_square + self.rms_eps).to(x.dtype) * self.weight # float32 upcast for stability, then back down to input dtype
         return out
 
 
@@ -278,7 +278,16 @@ class LMAttention(nn.Module):
         T_kv = k_exp.size(2)
         is_causal = (T > 1) and (T == T_kv)  # False during single-token decode
         if self.sdpa:
-            sdpa_is_causal = is_causal if attn_mask is None else False
+            sdpa_is_causal = is_causal
+            if is_causal and attn_mask is not None:
+                # SDPA can't combine is_causal with a padding mask, so fold the
+                # causal triangle into the additive mask (else causality is lost).
+                causal = torch.triu(
+                    torch.full((T, T_kv), torch.finfo(q.dtype).min, dtype=q.dtype, device=q.device),
+                    diagonal=1,
+                )
+                attn_mask = attn_mask + causal  # [B,1,1,T_kv] + [T,T_kv] -> [B,1,T,T_kv]
+                sdpa_is_causal = False
 
             attn = F.scaled_dot_product_attention(
                 q, k_exp, v_exp,

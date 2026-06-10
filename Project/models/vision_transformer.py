@@ -222,9 +222,9 @@ class ViTBlock(nn.Module):
         super().__init__()
         self.hidden_dim = cfg.hidden_dim
         #layerNorm ---> normalisation se fait tjr sur la dernière dim(hidden_dim ici)
-        self.ln1 = nn.LayerNorm(self.hidden_dim)    # LayerNorm applied before attention
+        self.ln1 = nn.LayerNorm(self.hidden_dim, eps=cfg.ln_eps)    # LayerNorm applied before attention
         self.attn = ViTAttention(cfg)   # the ViTAttention sub-layer
-        self.ln2 = nn.LayerNorm(self.hidden_dim)   # LayerNorm applied before the MLP
+        self.ln2 = nn.LayerNorm(self.hidden_dim, eps=cfg.ln_eps)   # LayerNorm applied before the MLP
         self.mlp = ViTMLP(cfg)    # the ViTMLP sub-layer
 
 

@@ -37,14 +37,14 @@ from data.collator import VQACollator
 
 
 # ── Cosine LR schedule with linear warmup ────────────────────────────────────
-def get_lr(step: int, max_lr: float, max_steps: int) -> float:
+def get_lr(step: int, max_lr: float, max_steps: int, warmup_fraction: float) -> float:
     """Return the learning rate for a given step.
 
     Phase 1: linear ramp from 0 → max_lr over the first 3% of steps.
     Phase 2: cosine decay from max_lr → max_lr/10 over the remaining steps.
     """
     min_lr = max_lr * 0.1
-    warmup_steps = max(1, int(max_steps * 0.03))
+    warmup_steps = max(1, int(max_steps * warmup_fraction))
     if step < warmup_steps:
         return max_lr * (step + 1) / warmup_steps
     if step >= max_steps:
@@ -289,7 +289,7 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
             )
             for g, max_lr in zip(optimizer.param_groups, max_lrs):
                 g["lr"] = get_lr(
-                    global_step, max_lr, train_cfg.max_steps
+                    global_step, max_lr, train_cfg.max_steps, train_cfg.warmup_fraction
                 )
             optimizer.step()
             optimizer.zero_grad()
