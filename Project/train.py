@@ -23,7 +23,6 @@ import json
 import math
 import os
 import time
-import numpy as np
 from dataclasses import fields
 
 import torch
@@ -80,12 +79,11 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
         print(f"Loading dataset from disk: {train_cfg.dataset_local_path}")
         raw = load_from_disk(train_cfg.dataset_local_path)
         ds = raw["train"] if "train" in raw else raw
-        indices = np.random.RandomState(42).permutation(len(ds))
+        # contiguous split: leaves _indices=None so iteration stays on the fast
+        # sequential Arrow path (a shuffled select forces random per-row seeks).
         n_val = int(0.1 * len(ds))
-        # keep_in_memory: index mapping stays in RAM, so no cache write to the
-        # read-only shared dataset dir on Turpan
-        val_ds = ds.select(indices[:n_val], keep_in_memory=True)
-        train_ds = ds.select(indices[n_val:], keep_in_memory=True)
+        val_ds = ds.select(range(n_val))
+        train_ds = ds.select(range(n_val, len(ds)))
 
         from data.dataset import FlickrDataset
         train_dataset = FlickrDataset(
@@ -95,8 +93,10 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
             val_ds, tokenizer, image_processor, vlm_cfg
         )
     else:
-        # Load and concatenate all cauldron subsets
-        splits = []
+        # Load each subset, split it contiguously (keeps _indices=None so the
+        # concatenated train set iterates on the fast sequential Arrow path),
+        # then concatenate. Per-subset split also stratifies val across subsets.
+        train_splits, val_splits = [], []
         base_path = train_cfg.dataset_local_path
         for subset in train_cfg.dataset_subsets:
             subset_path = os.path.join(base_path, subset)
@@ -106,32 +106,21 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
             print(f"  Loading {subset}...")
             raw = load_from_disk(subset_path)
             ds = raw["train"] if "train" in raw else raw
-            splits.append(ds)
+            n_val = int(0.1 * len(ds))
+            val_splits.append(ds.select(range(n_val)))
+            train_splits.append(ds.select(range(n_val, len(ds))))
 
-        if not splits:
+        if not train_splits:
             raise ValueError(
                 f"No cauldron subsets found under {base_path}/. "
                 "Run prepare_datasets.py first."
             )
 
-        ds = concatenate_datasets(splits)
-        print(f"Concatenated {len(splits)} subsets → {len(ds)} samples")
-        
-        n = len(ds)
-
-        indices = np.random.RandomState(42).permutation(n)
-
-        n_val = int(0.1 * n)
-
-        val_idx = indices[:n_val]
-        train_idx = indices[n_val:]
-
-        train_ds = ds.select(train_idx, keep_in_memory=True)
-        val_ds = ds.select(val_idx, keep_in_memory=True)
-
+        train_ds = concatenate_datasets(train_splits)
+        val_ds = concatenate_datasets(val_splits)
         print(
-            f"Train samples: {len(train_ds)} | "
-            f"Validation samples: {len(val_ds)}"
+            f"Concatenated {len(train_splits)} subsets → "
+            f"{len(train_ds)} train | {len(val_ds)} val samples"
         )
 
         from data.dataset import CauldronDataset
