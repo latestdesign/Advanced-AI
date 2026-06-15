@@ -33,7 +33,7 @@ PP3: CLIP/data/cifar*
 PP7: VLM warmup/models/modality_projector_sol.py
 PP7: VLM warmup/models/vision_language_model_sol.py
 nanoVLM
-Project/checkpoints/*
+Project/checkpoints/*/
 Project/eval_results/
 
 # Keep this specific dataset artifact tracked
