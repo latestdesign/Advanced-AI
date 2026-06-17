@@ -79,6 +79,7 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig, seed: int = 42,
 
     tokenizer = get_tokenizer(vlm_cfg.lm.tokenizer, vlm_cfg.image_token)
     image_processor = get_image_processor(vlm_cfg.vit.img_size)
+    nworkers = 1  # only the sharded map-style path below can safely go higher
 
     if train_cfg.dataset_type == 'flickr30k' or train_cfg.dataset_type == 'flickr':
         print(f"Loading dataset from disk: {train_cfg.dataset_local_path}")
@@ -121,8 +122,20 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig, seed: int = 42,
         print(f"Loaded pre-shuffled {n} train | {len(val_ds)} val samples")
 
         from data.dataset import CauldronDataset
-        train_dataset = CauldronDataset(train_ds, tokenizer, image_processor, vlm_cfg)
+        from torch.utils.data import get_worker_info
+
+        class _ShardedCauldron(CauldronDataset):
+            # map-style source -> give each DataLoader worker a contiguous slice
+            # (reads stay sequential, no duplication) so we can parallelise decode.
+            def __iter__(self):
+                info = get_worker_info()
+                if info is not None:
+                    self.dataset = self.dataset.shard(info.num_workers, info.id, contiguous=True)
+                yield from super().__iter__()
+
+        train_dataset = _ShardedCauldron(train_ds, tokenizer, image_processor, vlm_cfg)
         val_dataset = CauldronDataset(val_ds, tokenizer, image_processor, vlm_cfg)
+        nworkers = train_cfg.num_workers
     else:
         # Fallback (no pre-shuffle): load each subset, split contiguously, concat.
         # Reads stay sequential but mixing across subsets is weak — prefer running
@@ -170,7 +183,8 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig, seed: int = 42,
         train_dataset,
         batch_size=train_cfg.batch_size,
         collate_fn=collator,
-        num_workers=1,
+        num_workers=nworkers,
+        persistent_workers=nworkers > 0,
         pin_memory=True,
     )
     val_loader = DataLoader(

@@ -42,11 +42,15 @@ Tout passe par le conteneur Apptainer
    ```bash
    mkdir -p ~/job_results/out ~/job_results/err
    ```
-5. Installer `uv` s'il est absent (il vit dans `~/.local/bin`, ajouté au `PATH` par
-   les alias) :
+5. Installer `uv` s'il est absent. Il s'installe dans `~/.local/bin`, **absent du
+   `PATH` du shell courant** : il faut le rafraîchir tout de suite, sinon `uv` reste
+   introuvable (y compris dans `log_apptainer`, qui hérite de l'environnement courant) :
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
+   source $HOME/.local/bin/env       # met uv sur le PATH sans rouvrir de shell
    ```
+   (Si vous aviez déjà lancé `log_apptainer` avant ce `source`, sortez-en puis
+   rentrez-y : le conteneur fige le `PATH` au moment où on l'ouvre.)
 6. Entrer dans le conteneur du nœud de login avec `log_apptainer`, puis construire
    l'environnement sur le scratch :
    ```bash
