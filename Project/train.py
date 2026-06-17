@@ -226,9 +226,10 @@ def load_checkpoint(path, model, optimizer, device):
     model.load_state_dict(ckpt["model"])
     optimizer.load_state_dict(ckpt["optimizer"])
     random.setstate(ckpt["rng"])
-    torch.set_rng_state(ckpt["torch_rng"])
+    # map_location moved these onto the GPU; set_rng_state needs CPU ByteTensors
+    torch.set_rng_state(ckpt["torch_rng"].cpu())
     if device.type == "cuda" and ckpt["cuda_rng"] is not None:
-        torch.cuda.set_rng_state_all(ckpt["cuda_rng"])
+        torch.cuda.set_rng_state_all([s.cpu() for s in ckpt["cuda_rng"]])
     print(f"Resumed from {path} at step {ckpt['global_step']}")
     return (ckpt["global_step"], ckpt["best_val_loss"],
             ckpt["best_mmstar_acc"], ckpt["resume_count"])
