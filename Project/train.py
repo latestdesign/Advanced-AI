@@ -25,6 +25,7 @@ import math
 import os
 import random
 import re
+import shutil
 import time
 from dataclasses import fields
 
@@ -173,7 +174,10 @@ def _ckpt_step(path):
 def find_resume_checkpoint(path):
     # accept either an explicit .pt file or a directory (pick the newest ckpt there)
     if os.path.isdir(path):
-        ckpts = glob.glob(os.path.join(path, "ckpt_step*.pt"))
+        # skip 0-byte files: a truncated write (e.g. disk full) must not be picked
+        # as the newest and then fail to load.
+        ckpts = [p for p in glob.glob(os.path.join(path, "ckpt_step*.pt"))
+                 if os.path.getsize(p) > 0]
         return max(ckpts, key=_ckpt_step) if ckpts else None
     return path if os.path.exists(path) else None
 
@@ -207,6 +211,14 @@ def save_checkpoint(checkpoint_dir, model, optimizer, global_step, best_val_loss
                    key=_ckpt_step)
     for old in ckpts[:-keep_last]:
         os.remove(old)
+
+
+def prune_best(checkpoint_dir, prefix, keep_path):
+    # we only write a best-folder on an improvement, so the newest one IS the best
+    # of all time; drop the older ones (each holds full ~1.7GB weights).
+    for old in glob.glob(os.path.join(checkpoint_dir, f"{prefix}*")):
+        if old != keep_path:
+            shutil.rmtree(old, ignore_errors=True)
 
 
 def load_checkpoint(path, model, optimizer, device):
@@ -399,11 +411,15 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
 
         # ── Periodic resume checkpoint (step-tagged, keeps newest keep_checkpoints) ─
         if is_update_step and global_step % train_cfg.save_interval == 0:
-            save_checkpoint(
-                train_cfg.checkpoint_dir, model, optimizer, global_step,
-                best_val_loss, best_mmstar_acc, resume_count, device,
-                train_cfg.keep_checkpoints,
-            )
+            try:
+                save_checkpoint(
+                    train_cfg.checkpoint_dir, model, optimizer, global_step,
+                    best_val_loss, best_mmstar_acc, resume_count, device,
+                    train_cfg.keep_checkpoints,
+                )
+            except Exception as e:
+                # a failed save (e.g. full disk) must not kill a healthy run
+                print(f"  [warn] checkpoint save failed: {e}")
 
         # ── Evaluation ────────────────────────────────────────────────────────
         if is_update_step and global_step % train_cfg.eval_interval == 0:
@@ -438,6 +454,7 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
                 )
                 model.save_pretrained(ckpt)
                 print(f"  → new best checkpoint saved to {ckpt}")
+                prune_best(train_cfg.checkpoint_dir, "best_step", ckpt)
 
             if (
                 train_cfg.mmstar_val_path
@@ -492,6 +509,7 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
                     )
                     model.save_pretrained(ckpt)
                     print(f"  → new best MMStar checkpoint saved to {ckpt}")
+                    prune_best(train_cfg.checkpoint_dir, "best_mmstar_step", ckpt)
 
             model.train()
 

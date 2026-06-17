@@ -248,7 +248,7 @@ class TrainConfig:
 
     # Save a full resume checkpoint (weights + optimizer + step) every N steps,
     # so a wall-time kill or crash loses at most this many steps of progress
-    save_interval: int = 500
+    save_interval: int = 2500
 
     # How many recent resume checkpoints to keep (older ones are pruned); each is
     # several GB, so this bounds scratch use while leaving a few rollback points
