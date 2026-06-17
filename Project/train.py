@@ -19,9 +19,12 @@ The STUDENT SECTION (clearly marked below) is the inner training loop body.
 """
 
 import argparse
+import glob
 import json
 import math
 import os
+import random
+import re
 import time
 from dataclasses import fields
 
@@ -55,7 +58,7 @@ def get_lr(step: int, max_lr: float, max_steps: int, warmup_fraction: float) -> 
 
 
 # ── Data loading (PROVIDED) ───────────────────────────────────────────────────
-def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
+def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig, seed: int = 42):
     from datasets import load_from_disk, concatenate_datasets
 
     if not train_cfg.dataset_local_path:
@@ -87,7 +90,7 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
 
         # fix: shuffle via an iterable view so batches mix the split (reads stay
         # sequential). cap shards at set size for tiny datasets.
-        train_ds = train_ds.to_iterable_dataset(num_shards=min(8, len(train_ds))).shuffle(buffer_size=10000, seed=42)
+        train_ds = train_ds.to_iterable_dataset(num_shards=min(8, len(train_ds))).shuffle(buffer_size=10000, seed=seed)
         val_ds = val_ds.to_iterable_dataset(num_shards=min(8, len(val_ds))).shuffle(buffer_size=2000, seed=42)
 
         from data.dataset import FlickrDataset
@@ -131,7 +134,7 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
         # fix: buffered shuffle on an iterable view so batches mix the 47 subsets;
         # reads stay sequential (was serving subsets contiguously in alpha order ->
         # a short run only saw ai2d and loss stayed stuck). cap shards at set size.
-        train_ds = train_ds.to_iterable_dataset(num_shards=min(8, len(train_ds))).shuffle(buffer_size=10000, seed=42)
+        train_ds = train_ds.to_iterable_dataset(num_shards=min(8, len(train_ds))).shuffle(buffer_size=10000, seed=seed)
         val_ds = val_ds.to_iterable_dataset(num_shards=min(8, len(val_ds))).shuffle(buffer_size=2000, seed=42)
 
         from data.dataset import CauldronDataset
@@ -159,6 +162,64 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
         pin_memory=True,
     )
     return train_loader, val_loader
+
+
+# ── Resume checkpointing ──────────────────────────────────────────────────────
+def _ckpt_step(path):
+    # extract the step number from a ckpt_step<N>.pt filename, for sorting
+    return int(re.search(r"ckpt_step(\d+)\.pt$", path).group(1))
+
+
+def find_resume_checkpoint(path):
+    # accept either an explicit .pt file or a directory (pick the newest ckpt there)
+    if os.path.isdir(path):
+        ckpts = glob.glob(os.path.join(path, "ckpt_step*.pt"))
+        return max(ckpts, key=_ckpt_step) if ckpts else None
+    return path if os.path.exists(path) else None
+
+
+def save_checkpoint(checkpoint_dir, model, optimizer, global_step, best_val_loss,
+                    best_mmstar_acc, resume_count, device, keep_last):
+    # everything needed to continue training byte-for-byte: weights, AdamW moments
+    # (without these the first resumed step overshoots), the step counter (the LR
+    # schedule is a pure function of it), best-metric trackers, and RNG so dropout
+    # etc. line up. data cursor is intentionally not saved (see train()).
+    state = {
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "global_step": global_step,
+        "best_val_loss": best_val_loss,
+        "best_mmstar_acc": best_mmstar_acc,
+        "resume_count": resume_count,
+        "rng": random.getstate(),
+        "torch_rng": torch.get_rng_state(),
+        "cuda_rng": torch.cuda.get_rng_state_all() if device.type == "cuda" else None,
+    }
+    # write to a temp file then os.replace: the swap is atomic, so a crash mid-write
+    # can never leave a half-written checkpoint that fails to load.
+    path = os.path.join(checkpoint_dir, f"ckpt_step{global_step}.pt")
+    tmp = path + ".tmp"
+    torch.save(state, tmp)
+    os.replace(tmp, path)
+    # rotate: keep only the newest keep_last checkpoints (each is ~weights+optimizer,
+    # several GB) so we always have a few rollback points without filling scratch.
+    ckpts = sorted(glob.glob(os.path.join(checkpoint_dir, "ckpt_step*.pt")),
+                   key=_ckpt_step)
+    for old in ckpts[:-keep_last]:
+        os.remove(old)
+
+
+def load_checkpoint(path, model, optimizer, device):
+    ckpt = torch.load(path, map_location=device)
+    model.load_state_dict(ckpt["model"])
+    optimizer.load_state_dict(ckpt["optimizer"])
+    random.setstate(ckpt["rng"])
+    torch.set_rng_state(ckpt["torch_rng"])
+    if device.type == "cuda" and ckpt["cuda_rng"] is not None:
+        torch.cuda.set_rng_state_all(ckpt["cuda_rng"])
+    print(f"Resumed from {path} at step {ckpt['global_step']}")
+    return (ckpt["global_step"], ckpt["best_val_loss"],
+            ckpt["best_mmstar_acc"], ckpt["resume_count"])
 
 
 # ── Main training function ────────────────────────────────────────────────────
@@ -216,8 +277,29 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
         p for g in optimizer.param_groups for p in g["params"]
     ]
 
+    # ── Resume (load before building data so we can bump the shuffle seed) ──────
+    global_step = 0
+    best_val_loss = float("inf")
+    best_mmstar_acc = -1.0
+    resume_count = 0
+    if train_cfg.resume_from:
+        ckpt_path = find_resume_checkpoint(train_cfg.resume_from)
+        if ckpt_path is not None:
+            global_step, best_val_loss, best_mmstar_acc, resume_count = load_checkpoint(
+                ckpt_path, model, optimizer, device
+            )
+            resume_count += 1   # count this resume so the seed below changes
+        else:
+            print(f"No checkpoint found at {train_cfg.resume_from}; starting fresh")
+
     # ── Data ──────────────────────────────────────────────────────────────────
-    train_loader, val_loader = get_dataloaders(train_cfg, vlm_cfg)
+    # The data cursor isn't checkpointed: with num_workers=1 it lives in the worker
+    # process (unreachable from here), and a full run sees <10% of one epoch, so a
+    # little replay is harmless. Instead we bump the shuffle seed per resume -> a
+    # fresh order each time -> better coverage rather than replaying the same head.
+    train_loader, val_loader = get_dataloaders(
+        train_cfg, vlm_cfg, seed=42 + resume_count
+    )
     iter_train = iter(train_loader)
 
     # ── AMP context ───────────────────────────────────────────────────────────
@@ -231,10 +313,7 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
     # ── Checkpoint directory ──────────────────────────────────────────────────
     os.makedirs(train_cfg.checkpoint_dir, exist_ok=True)
 
-    # ── Training state ────────────────────────────────────────────────────────
-    global_step = 0
-    best_val_loss = float("inf")
-    best_mmstar_acc = -1.0
+    # ── Training state (global_step/best_* set above so resume can restore them) ─
     batch_loss = 0.0   # set by the student section each micro-step
     accum_loss_sum = 0.0   # fix: running sum to log the accumulation-window mean
     optimizer.zero_grad()
@@ -316,6 +395,14 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
             print(
                 f"step {global_step:6d} | loss {batch_loss:.6f}"
                 f" | {elapsed:.1f}s"
+            )
+
+        # ── Periodic resume checkpoint (step-tagged, keeps newest keep_checkpoints) ─
+        if is_update_step and global_step % train_cfg.save_interval == 0:
+            save_checkpoint(
+                train_cfg.checkpoint_dir, model, optimizer, global_step,
+                best_val_loss, best_mmstar_acc, resume_count, device,
+                train_cfg.keep_checkpoints,
             )
 
         # ── Evaluation ────────────────────────────────────────────────────────
