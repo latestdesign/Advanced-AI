@@ -243,8 +243,9 @@ class TrainConfig:
     val_size: int = 256
 
     # Maximum sequence length in tokens; samples longer than this are
-    # dropped by VQACollator to prevent OOM
-    max_length: int = 2048
+    # dropped by VQACollator to prevent OOM. 1536 keeps the fp32 logit
+    # upcast within 80GB once the global shuffle exposes the long-text subsets.
+    max_length: int = 1536
 
     # Optional MMStar validation callback. Leave mmstar_val_path empty to disable.
     mmstar_val_path: str = '/work/shared/TPIRT/mmstar'
