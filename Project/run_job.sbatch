@@ -19,7 +19,7 @@ apptainer exec \
     --env PATH=$HOME/.local/bin:$PATH \
     --env UV_PROJECT_ENVIRONMENT=/tmpdir/tpirtlkpl/envs/aai \
     --env UV_NO_SYNC=true \
-    --env HF_HOME=/work/shared/TPIRT/huggingface \
+    --env HF_HOME=/users/formation/tpirtlkpl/.cache/huggingface \
     --env HF_HUB_OFFLINE=1 \
     --env HF_DATASETS_OFFLINE=1 \
     --env HF_DATASETS_CACHE=/tmpdir/tpirtlkpl/huggingface/datasets \
