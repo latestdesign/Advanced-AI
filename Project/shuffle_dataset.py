@@ -51,8 +51,10 @@ def main():
 
     # shuffle() only sets a lazy index permutation; save_to_disk then materialises
     # the rows in that shuffled order -> a contiguous, globally mixed copy on disk.
-    train = concatenate_datasets(train_splits).shuffle(seed=args.seed)
-    val = concatenate_datasets(val_splits).shuffle(seed=args.seed)
+    # keep_in_memory: the source lives on read-only /work, so the shuffle index
+    # mapping can't be cached next to it — hold it in RAM instead (just an int array).
+    train = concatenate_datasets(train_splits).shuffle(seed=args.seed, keep_in_memory=True)
+    val = concatenate_datasets(val_splits).shuffle(seed=args.seed, keep_in_memory=True)
     print(f"shuffling {len(train)} train | {len(val)} val -> {args.out}")
 
     DatasetDict({"train": train, "val": val}).save_to_disk(args.out, num_proc=args.num_proc)
