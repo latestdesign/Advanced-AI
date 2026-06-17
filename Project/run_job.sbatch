@@ -2,7 +2,7 @@
 #SBATCH -J vlm
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=16
 #SBATCH --gres=gpu:1
 #SBATCH -p shared
 #SBATCH --time=4:00:00

@@ -184,7 +184,7 @@ class TrainConfig:
     batch_size: int = 16
 
     # DataLoader workers for the pre-shuffled (map-style) path; ~cpus-per-task
-    num_workers: int = 8
+    num_workers: int = 16
 
     # Number of micro-batches accumulated before one optimizer.step();
     # effective batch size = batch_size × gradient_accumulation_steps = 16
