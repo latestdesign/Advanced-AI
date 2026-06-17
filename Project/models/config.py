@@ -181,11 +181,11 @@ class TrainConfig:
     lr_lm: float = 5e-5
 
     # Number of samples per forward pass (micro-batch); limited by GPU memory
-    batch_size: int = 2
+    batch_size: int = 16
 
     # Number of micro-batches accumulated before one optimizer.step();
     # effective batch size = batch_size × gradient_accumulation_steps = 16
-    gradient_accumulation_steps: int = 8
+    gradient_accumulation_steps: int = 1
 
     # Maximum L2 norm for gradient clipping (torch.nn.utils.clip_grad_norm_);
     # applied to all parameters before each optimizer step
