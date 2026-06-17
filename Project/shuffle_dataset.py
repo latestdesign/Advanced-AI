@@ -9,8 +9,8 @@ subset mixed together.
 Run on the login node (has network, not GPU-billed), inside the container:
     uv run python shuffle_dataset.py \
         --src /work/shared/TPIRT/the_cauldron \
-        --out /tmpdir/tpirtlkpl/cauldron_shuffled
-Then train with --shuffled_path /tmpdir/tpirtlkpl/cauldron_shuffled
+        --out /tmpdir/$USER/cauldron_shuffled
+Then train with --shuffled_path /tmpdir/$USER/cauldron_shuffled
 """
 import argparse
 import os
@@ -24,7 +24,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", default="/work/shared/TPIRT/the_cauldron",
                     help="dir holding the per-subset Arrow datasets")
-    ap.add_argument("--out", default="/tmpdir/tpirtlkpl/cauldron_shuffled",
+    ap.add_argument("--out", default=f"/tmpdir/{os.environ.get('USER', '')}/cauldron_shuffled",
                     help="where to write the shuffled DatasetDict (use scratch)")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--num_proc", type=int, default=8,
