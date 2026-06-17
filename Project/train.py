@@ -23,7 +23,6 @@ import json
 import math
 import os
 import time
-import numpy as np
 from dataclasses import fields
 
 import torch
@@ -80,12 +79,16 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
         print(f"Loading dataset from disk: {train_cfg.dataset_local_path}")
         raw = load_from_disk(train_cfg.dataset_local_path)
         ds = raw["train"] if "train" in raw else raw
-        indices = np.random.RandomState(42).permutation(len(ds))
+        # contiguous split: leaves _indices=None so iteration stays on the fast
+        # sequential Arrow path (a shuffled select forces random per-row seeks).
         n_val = int(0.1 * len(ds))
-        # keep_in_memory: index mapping stays in RAM, so no cache write to the
-        # read-only shared dataset dir on Turpan
-        val_ds = ds.select(indices[:n_val], keep_in_memory=True)
-        train_ds = ds.select(indices[n_val:], keep_in_memory=True)
+        val_ds = ds.select(range(n_val))
+        train_ds = ds.select(range(n_val, len(ds)))
+
+        # fix: shuffle via an iterable view so batches mix the split (reads stay
+        # sequential). cap shards at set size for tiny datasets.
+        train_ds = train_ds.to_iterable_dataset(num_shards=min(8, len(train_ds))).shuffle(buffer_size=10000, seed=42)
+        val_ds = val_ds.to_iterable_dataset(num_shards=min(8, len(val_ds))).shuffle(buffer_size=2000, seed=42)
 
         from data.dataset import FlickrDataset
         train_dataset = FlickrDataset(
@@ -95,8 +98,10 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
             val_ds, tokenizer, image_processor, vlm_cfg
         )
     else:
-        # Load and concatenate all cauldron subsets
-        splits = []
+        # Load each subset, split it contiguously (keeps _indices=None so the
+        # concatenated train set iterates on the fast sequential Arrow path),
+        # then concatenate. Per-subset split also stratifies val across subsets.
+        train_splits, val_splits = [], []
         base_path = train_cfg.dataset_local_path
         for subset in train_cfg.dataset_subsets:
             subset_path = os.path.join(base_path, subset)
@@ -106,33 +111,28 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
             print(f"  Loading {subset}...")
             raw = load_from_disk(subset_path)
             ds = raw["train"] if "train" in raw else raw
-            splits.append(ds)
+            n_val = int(0.1 * len(ds))
+            val_splits.append(ds.select(range(n_val)))
+            train_splits.append(ds.select(range(n_val, len(ds))))
 
-        if not splits:
+        if not train_splits:
             raise ValueError(
                 f"No cauldron subsets found under {base_path}/. "
                 "Run prepare_datasets.py first."
             )
 
-        ds = concatenate_datasets(splits)
-        print(f"Concatenated {len(splits)} subsets → {len(ds)} samples")
-        
-        n = len(ds)
-
-        indices = np.random.RandomState(42).permutation(n)
-
-        n_val = int(0.1 * n)
-
-        val_idx = indices[:n_val]
-        train_idx = indices[n_val:]
-
-        train_ds = ds.select(train_idx, keep_in_memory=True)
-        val_ds = ds.select(val_idx, keep_in_memory=True)
-
+        train_ds = concatenate_datasets(train_splits)
+        val_ds = concatenate_datasets(val_splits)
         print(
-            f"Train samples: {len(train_ds)} | "
-            f"Validation samples: {len(val_ds)}"
+            f"Concatenated {len(train_splits)} subsets → "
+            f"{len(train_ds)} train | {len(val_ds)} val samples"
         )
+
+        # fix: buffered shuffle on an iterable view so batches mix the 47 subsets;
+        # reads stay sequential (was serving subsets contiguously in alpha order ->
+        # a short run only saw ai2d and loss stayed stuck). cap shards at set size.
+        train_ds = train_ds.to_iterable_dataset(num_shards=min(8, len(train_ds))).shuffle(buffer_size=10000, seed=42)
+        val_ds = val_ds.to_iterable_dataset(num_shards=min(8, len(val_ds))).shuffle(buffer_size=2000, seed=42)
 
         from data.dataset import CauldronDataset
         train_dataset = CauldronDataset(
@@ -236,6 +236,7 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
     best_val_loss = float("inf")
     best_mmstar_acc = -1.0
     batch_loss = 0.0   # set by the student section each micro-step
+    accum_loss_sum = 0.0   # fix: running sum to log the accumulation-window mean
     optimizer.zero_grad()
 
     print(
@@ -299,9 +300,12 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
             global_step += 1
 
         # TODO 6 — Store the unscaled loss for logging:
-        batch_loss = (
-            loss.item() * train_cfg.gradient_accumulation_steps
-        )
+        # fix: average over the accumulation window instead of logging only the
+        # last micro-batch (one batch_size=N sample made the curve very noisy)
+        accum_loss_sum += loss.item() * train_cfg.gradient_accumulation_steps
+        if is_update_step:
+            batch_loss = accum_loss_sum / train_cfg.gradient_accumulation_steps
+            accum_loss_sum = 0.0
         # ══════════════════════════════════════════════════════════════════════
 
         accum_step += 1

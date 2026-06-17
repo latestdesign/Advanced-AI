@@ -93,15 +93,25 @@ class TestLMPretrainedLoading:
         model = LanguageModel.from_pretrained(cfg.lm).to(device).eval()
         T = 16
         x = torch.randn(1, T, cfg.lm.hidden_dim, device=device)
-        with torch.no_grad():
-            hidden_full, _ = model(x, kv_cache=None, start_pos=0)
-            logits_full = model.head(hidden_full)
-            hidden_prefix, kv = model(x[:, :-1], kv_cache=None, start_pos=0)
-            hidden_last, _ = model(x[:, -1:], kv_cache=kv, start_pos=T - 1)
-            logits_last = model.head(hidden_last)
-        torch.testing.assert_close(
-            logits_full[:, -1:], logits_last, atol=1e-3, rtol=1e-3
-        )
+        # fix: disable TF32 so the A100 runs true fp32 like CPU (~3e-6); TF32 rounded
+        # the prefill/decode matmuls differently -> ~1e-2 diff. restore after.
+        prev_mm = torch.backends.cuda.matmul.allow_tf32
+        prev_cudnn = torch.backends.cudnn.allow_tf32
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cudnn.allow_tf32 = False
+        try:
+            with torch.no_grad():
+                hidden_full, _ = model(x, kv_cache=None, start_pos=0)
+                logits_full = model.head(hidden_full)
+                hidden_prefix, kv = model(x[:, :-1], kv_cache=None, start_pos=0)
+                hidden_last, _ = model(x[:, -1:], kv_cache=kv, start_pos=T - 1)
+                logits_last = model.head(hidden_last)
+            torch.testing.assert_close(
+                logits_full[:, -1:], logits_last, atol=1e-3, rtol=1e-3
+            )
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = prev_mm
+            torch.backends.cudnn.allow_tf32 = prev_cudnn
 
 
 class TestVLMPretrainedForward:
