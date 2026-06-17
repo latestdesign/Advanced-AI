@@ -24,6 +24,7 @@ apptainer exec \
     --env HF_DATASETS_OFFLINE=1 \
     --env HF_DATASETS_CACHE=/tmpdir/tpirtlkpl/huggingface/datasets \
     --env TRANSFORMERS_OFFLINE=1 \
+    --env PYTHONUNBUFFERED=1 \
     --bind /tmpdir,/work \
     --nv /work/conteneurs/sessions-interactives/pytorch-24.02-py3-calmip-si.sif \
     uv run python "$@"
