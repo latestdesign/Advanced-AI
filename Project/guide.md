@@ -35,19 +35,25 @@ Tout passe par le conteneur Apptainer
 `/tmpdir` est purgeable mais sans quota ; le `HOME` a un quota dur de 10 Go, donc
 **toujours écrire dataset et checkpoints dans `/tmpdir/$USER/`**.
 
-1. Cloner le repo sur Turpan (`~/Advanced-AI`).
-2. Copier les alias de l'**annexe** dans `~/.bashrc`, puis `source ~/.bashrc`.
-3. Créer les dossiers de logs SLURM (sinon le job échoue à écrire) :
+1. Accès ssh à Turpan configuré (voir **Annexe — accès ssh**).
+2. Cloner le repo sur Turpan (`~/Advanced-AI`).
+3. Copier les alias de l'**annexe** dans `~/.bashrc`, puis `source ~/.bashrc`.
+4. Créer les dossiers de logs SLURM (sinon le job échoue à écrire) :
    ```bash
    mkdir -p ~/job_results/out ~/job_results/err
    ```
-4. Entrer dans le conteneur du nœud de login avec `log_apptainer`, puis construire
+5. Installer `uv` s'il est absent (il vit dans `~/.local/bin`, ajouté au `PATH` par
+   les alias) :
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+6. Entrer dans le conteneur du nœud de login avec `log_apptainer`, puis construire
    l'environnement sur le scratch :
    ```bash
    uv venv --python=/usr/bin/python --system-site-packages /tmpdir/$USER/envs/aai
    uv sync --only-group turpan
    ```
-5. Toujours dans le conteneur login (réseau disponible), télécharger les backbones
+7. Toujours dans le conteneur login (réseau disponible), télécharger les backbones
    dans le cache HF — les nœuds de calcul sont hors-ligne, il faut donc les avoir en
    cache **avant** l'entraînement :
    ```bash
@@ -188,3 +194,33 @@ train_vlm() {
     --resume_from /tmpdir/$USER/checkpoints "$@"
 }
 ```
+
+## Annexe — accès ssh à Turpan
+
+Turpan se rejoint via un rebond (machine de l'école). Sur **votre machine locale**,
+`~/.ssh/config` (remplacez les valeurs entre `<...>`) :
+```
+Host turpan
+    HostName <hote_turpan>
+    User <compte_calmip>
+    ProxyJump <hote_rebond>
+    IdentityFile ~/.ssh/<votre_cle>
+    IdentitiesOnly yes
+    ControlMaster auto
+    ControlPath ~/.ssh/cm-%r@%h:%p
+    ControlPersist 10m
+```
+
+Piège CALMIP : Turpan n'utilise **pas** `~/.ssh/authorized_keys`, mais un dossier
+géré `~/.ssh_calmip/`. La clé publique doit être ajoutée dans le seul fichier
+éditable, `authorized_keys.user` (vous en êtes propriétaire, mode 400) — sinon la clé
+est refusée et on retombe sur une demande de mot de passe en boucle :
+```bash
+# sur Turpan :
+chmod u+w ~/.ssh_calmip/authorized_keys.user
+echo 'ssh-ed25519 AAAA...votre_cle_publique... vous@machine' >> ~/.ssh_calmip/authorized_keys.user
+chmod 400 ~/.ssh_calmip/authorized_keys.user
+```
+Ne pas toucher `authorized_keys.admin` / `.pi` / `.internal` (gérés par CALMIP). Une
+fois la clé en place, elle est permanente côté Turpan.
+
