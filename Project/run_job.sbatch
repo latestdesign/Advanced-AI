@@ -5,7 +5,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
 #SBATCH -p shared
-#SBATCH --time=04:00:00
+#SBATCH --time=12:00:00
 #SBATCH --output=/users/formation/tpirtlkpl/job_results/out/job_%j.out
 #SBATCH --error=/users/formation/tpirtlkpl/job_results/err/job_%j.err
 
