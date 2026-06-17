@@ -85,6 +85,11 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
         val_ds = ds.select(range(n_val))
         train_ds = ds.select(range(n_val, len(ds)))
 
+        # fix: shuffle via an iterable view so batches mix the split (reads stay
+        # sequential). cap shards at set size for tiny datasets.
+        train_ds = train_ds.to_iterable_dataset(num_shards=min(8, len(train_ds))).shuffle(buffer_size=10000, seed=42)
+        val_ds = val_ds.to_iterable_dataset(num_shards=min(8, len(val_ds))).shuffle(buffer_size=2000, seed=42)
+
         from data.dataset import FlickrDataset
         train_dataset = FlickrDataset(
             train_ds, tokenizer, image_processor, vlm_cfg
@@ -122,6 +127,12 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
             f"Concatenated {len(train_splits)} subsets → "
             f"{len(train_ds)} train | {len(val_ds)} val samples"
         )
+
+        # fix: buffered shuffle on an iterable view so batches mix the 47 subsets;
+        # reads stay sequential (was serving subsets contiguously in alpha order ->
+        # a short run only saw ai2d and loss stayed stuck). cap shards at set size.
+        train_ds = train_ds.to_iterable_dataset(num_shards=min(8, len(train_ds))).shuffle(buffer_size=10000, seed=42)
+        val_ds = val_ds.to_iterable_dataset(num_shards=min(8, len(val_ds))).shuffle(buffer_size=2000, seed=42)
 
         from data.dataset import CauldronDataset
         train_dataset = CauldronDataset(
@@ -225,6 +236,7 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
     best_val_loss = float("inf")
     best_mmstar_acc = -1.0
     batch_loss = 0.0   # set by the student section each micro-step
+    accum_loss_sum = 0.0   # fix: running sum to log the accumulation-window mean
     optimizer.zero_grad()
 
     print(
@@ -288,9 +300,12 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
             global_step += 1
 
         # TODO 6 — Store the unscaled loss for logging:
-        batch_loss = (
-            loss.item() * train_cfg.gradient_accumulation_steps
-        )
+        # fix: average over the accumulation window instead of logging only the
+        # last micro-batch (one batch_size=N sample made the curve very noisy)
+        accum_loss_sum += loss.item() * train_cfg.gradient_accumulation_steps
+        if is_update_step:
+            batch_loss = accum_loss_sum / train_cfg.gradient_accumulation_steps
+            accum_loss_sum = 0.0
         # ══════════════════════════════════════════════════════════════════════
 
         accum_step += 1
