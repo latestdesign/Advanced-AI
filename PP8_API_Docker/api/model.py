@@ -1,37 +1,59 @@
-from __future__ import annotations
+from PIL import Image
 
-import logging
+from data.processors import get_image_string
 
 import torch
-from PIL import Image
-from transformers import AutoModelForVision2Seq, AutoProcessor
+import logging
+
+from models.vision_language_model import VisionLanguageModel
+from data.processors import get_tokenizer, get_image_processor
 
 logger = logging.getLogger(__name__)
 
-MODEL_ID = "HuggingFaceTB/SmolVLM-256M-Instruct"
-
-_processor: AutoProcessor | None = None
-_model: AutoModelForVision2Seq | None = None
-_device: str = "cpu"
 
 
-def load_model() -> None:
-    global _processor, _model, _device
+def load_model(checkpoint: str) -> None:
+    """
+    Load trained VisionLanguageModel from checkpoint.
+    Idempotent: if already loaded, does nothing.
+    """
+
+    global _model, _tokenizer, _image_processor, _device, _cfg
+
     if _model is not None:
         return
 
     if torch.cuda.is_available():
-        _device = "cuda"
-        dtype = torch.bfloat16
+        _device = torch.device("cuda")
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        _device = torch.device("mps")
     else:
-        _device = "cpu"
-        dtype = torch.float32
+        _device = torch.device("cpu")
 
-    logger.info("Loading %s on %s (dtype=%s)", MODEL_ID, _device, dtype)
-    _processor = AutoProcessor.from_pretrained(MODEL_ID)
-    _model = AutoModelForVision2Seq.from_pretrained(MODEL_ID, torch_dtype=dtype).to(_device)
+    logger.info("Loading checkpoint from %s on %s", checkpoint, _device)
+
+    _model = VisionLanguageModel.from_pretrained(checkpoint).to(_device)
     _model.eval()
+
+    _cfg = _model.cfg
+
+    _tokenizer = get_tokenizer(
+        _cfg.lm.tokenizer,
+        _cfg.image_token
+    )
+
+    _image_processor = get_image_processor(
+        _cfg.vit.img_size
+    )
+
     logger.info("Model loaded")
+
+# Ces variables sont initialisées dans load_model(checkpoint)
+_model = None
+_tokenizer = None
+_image_processor = None
+_device = None
+_cfg = None
 
 
 def generate(
@@ -40,46 +62,86 @@ def generate(
     max_new_tokens: int = 256,
     temperature: float = 0.7,
 ) -> str:
-    """Generate the next assistant reply for a conversation.
-
-    `messages` uses the `{"role": ..., "content": str}` format — same shape the
-    notebook taught and the same shape the OpenAI chat API exposes. The
-    SmolVLM-specific content-block conversion happens here and stays here.
     """
-    if _model is None or _processor is None:
-        raise RuntimeError("Model not loaded; call load_model() first")
+    Generate an answer using the loaded VisionLanguageModel.
 
-    has_image = image is not None
-    last_user_idx = max(
-        (i for i, m in enumerate(messages) if m["role"] == "user"),
-        default=-1,
+    Args:
+        messages: list of dicts like [{"role": "user", "content": "..."}]
+        image: PIL image or None
+        max_new_tokens: maximum number of new tokens
+        temperature: generation temperature
+
+    Returns:
+        str: generated answer
+    """
+
+    global _model, _tokenizer, _image_processor, _device, _cfg
+
+    if _model is None:
+        raise RuntimeError("Model is not loaded. Call load_model(checkpoint) first.")
+
+    if image is None:
+        raise ValueError("This VisionLanguageModel needs an image. image cannot be None.")
+
+    # Process image
+    image = image.convert("RGB")
+    pixel_values = _image_processor(image).unsqueeze(0).to(_device)
+
+    # Image placeholder tokens
+    image_string = get_image_string(
+        _cfg.projector.image_token_length,
+        _cfg.image_token
     )
 
-    # SmolVLM-specific: convert {role, content: str} → SmolVLM content-block format.
-    formatted: list[dict] = []
+    # Find the last user message
+    last_user_idx = max(
+        (i for i, m in enumerate(messages) if m["role"] == "user"),
+        default=-1
+    )
+
+    if last_user_idx == -1:
+        raise ValueError("messages must contain at least one user message.")
+
+    # Build messages for tokenizer
+    formatted_messages = []
+
     for i, m in enumerate(messages):
-        if m["role"] == "user" and i == last_user_idx and has_image:
-            content = [{"type": "image"}, {"type": "text", "text": m["content"]}]
-        else:
-            content = [{"type": "text", "text": m["content"]}]
-        formatted.append({"role": m["role"], "content": content})
+        role = m["role"]
+        content = m["content"]
 
-    prompt = _processor.apply_chat_template(formatted, add_generation_prompt=True)
-    inputs = _processor(
-        text=prompt,
-        images=[image] if has_image else None,
-        return_tensors="pt",
-    ).to(_device)
+        # Put image tokens only before the last user message
+        if role == "user" and i == last_user_idx:
+            content = image_string + content
 
-    do_sample = temperature > 0.0
+        formatted_messages.append({
+            "role": role,
+            "content": content
+        })
+
+    encoded = _tokenizer.apply_chat_template(
+        [formatted_messages],
+        tokenize=True,
+        add_generation_prompt=True
+    )
+
+    input_ids = torch.tensor(encoded).to(_device)
+    attention_mask = torch.ones_like(input_ids)
+
+    greedy = temperature <= 0.0
+
     with torch.no_grad():
-        output_ids = _model.generate(
-            **inputs,
+        gen = _model.generate(
+            input_ids,
+            pixel_values,
+            attention_mask=attention_mask,
             max_new_tokens=max_new_tokens,
-            do_sample=do_sample,
-            temperature=temperature if do_sample else 1.0,
+            greedy=greedy,
+            temperature=temperature if not greedy else 1.0,
         )
 
-    input_len = inputs["input_ids"].shape[1]
-    new_tokens = output_ids[0, input_len:]
-    return _processor.decode(new_tokens, skip_special_tokens=True).strip()
+    text = _tokenizer.batch_decode(
+        gen,
+        skip_special_tokens=True
+    )[0]
+
+    return text.strip()
