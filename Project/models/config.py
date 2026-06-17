@@ -230,6 +230,11 @@ class TrainConfig:
     # Base path where prepare_datasets.py saved the Arrow datasets
     dataset_local_path: str = '/work/shared/TPIRT'
 
+    # Optional pre-shuffled dataset (built once by shuffle_dataset.py): a globally
+    # interleaved on-disk copy so training reads sequentially yet mixes all subsets.
+    # Empty -> fall back to per-subset concat. Set to a /tmpdir path on Turpan.
+    shuffled_path: str = ''
+
     # Number of validation samples evaluated at each eval_interval
     # (capped at 64 batches inside the eval loop)
     val_size: int = 256

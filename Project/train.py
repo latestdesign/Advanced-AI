@@ -59,7 +59,8 @@ def get_lr(step: int, max_lr: float, max_steps: int, warmup_fraction: float) -> 
 
 
 # ── Data loading (PROVIDED) ───────────────────────────────────────────────────
-def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig, seed: int = 42):
+def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig, seed: int = 42,
+                    skip_samples: int = 0):
     from datasets import load_from_disk, concatenate_datasets
 
     if not train_cfg.dataset_local_path:
@@ -101,10 +102,31 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig, seed: int = 42):
         val_dataset = FlickrDataset(
             val_ds, tokenizer, image_processor, vlm_cfg
         )
+    elif train_cfg.shuffled_path and os.path.exists(train_cfg.shuffled_path):
+        # Pre-shuffled on disk by shuffle_dataset.py: the 47 subsets are already
+        # globally mixed, so iterating the map-style dataset in order gives fast
+        # sequential reads AND full subset mixing — no read-time shuffle needed.
+        dsd = load_from_disk(train_cfg.shuffled_path)
+        train_ds = dsd["train"]
+        val_ds = dsd["val"]
+        n = len(train_ds)
+        start = skip_samples % n
+        if start:
+            # exact resume: skip the already-consumed samples so a restart continues
+            # through the data instead of replaying the head. a contiguous range
+            # select stays a sequential read; off only by the few rows CauldronDataset
+            # drops (missing image etc.), which is negligible.
+            train_ds = train_ds.select(range(start, n))
+            print(f"  resuming data stream at sample {start}/{n}")
+        print(f"Loaded pre-shuffled {n} train | {len(val_ds)} val samples")
+
+        from data.dataset import CauldronDataset
+        train_dataset = CauldronDataset(train_ds, tokenizer, image_processor, vlm_cfg)
+        val_dataset = CauldronDataset(val_ds, tokenizer, image_processor, vlm_cfg)
     else:
-        # Load each subset, split it contiguously (keeps _indices=None so the
-        # concatenated train set iterates on the fast sequential Arrow path),
-        # then concatenate. Per-subset split also stratifies val across subsets.
+        # Fallback (no pre-shuffle): load each subset, split contiguously, concat.
+        # Reads stay sequential but mixing across subsets is weak — prefer running
+        # shuffle_dataset.py once and pointing --shuffled_path at the result.
         train_splits, val_splits = [], []
         base_path = train_cfg.dataset_local_path
         for subset in train_cfg.dataset_subsets:
@@ -131,13 +153,6 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig, seed: int = 42):
             f"Concatenated {len(train_splits)} subsets → "
             f"{len(train_ds)} train | {len(val_ds)} val samples"
         )
-
-        # fix: subsets sit contiguously, so few big shards left each batch stuck in
-        # one subset (loss drifted per-block, val rose). many small shards let
-        # .shuffle() permute shard read-order -> batches span dozens of subsets,
-        # while reads stay sequential within a shard. (row-level interleave_datasets
-        # across 47 files thrashed the network FS ~50x; high shard count mixes
-        # without that cost.)
         train_ds = train_ds.to_iterable_dataset(num_shards=min(1024, len(train_ds))).shuffle(buffer_size=10000, seed=seed)
         val_ds = val_ds.to_iterable_dataset(num_shards=min(256, len(val_ds))).shuffle(buffer_size=2000, seed=42)
 
@@ -309,12 +324,13 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
             print(f"No checkpoint found at {train_cfg.resume_from}; starting fresh")
 
     # ── Data ──────────────────────────────────────────────────────────────────
-    # The data cursor isn't checkpointed: with num_workers=1 it lives in the worker
-    # process (unreachable from here), and a full run sees <10% of one epoch, so a
-    # little replay is harmless. Instead we bump the shuffle seed per resume -> a
-    # fresh order each time -> better coverage rather than replaying the same head.
+    # Resume the data stream where we left off. Pre-shuffled path: skip exactly the
+    # consumed samples (global_step optimiser steps × the micro-batches they ate) so
+    # we advance through the data instead of replaying the head. Fallback path has no
+    # tracked cursor, so we also bump the buffer-shuffle seed per resume for coverage.
+    skip_samples = global_step * train_cfg.batch_size * train_cfg.gradient_accumulation_steps
     train_loader, val_loader = get_dataloaders(
-        train_cfg, vlm_cfg, seed=42 + resume_count
+        train_cfg, vlm_cfg, seed=42 + resume_count, skip_samples=skip_samples
     )
     iter_train = iter(train_loader)
 
