@@ -39,13 +39,9 @@ for arg in sys.argv[1:]:
                 # if that goes wrong, just use the string
                 attempt = val
             # ensure the types match ok
-<<<<<<< HEAD
-            assert type(attempt) == type(globals()[key])
-=======
             assert globals()[key] is None or type(attempt) == type(globals()[key]), (
                 f"Type mismatch for {key}: expected {type(globals()[key])}, got {type(attempt)}"
             )
->>>>>>> main
             # cross fingers
             print(f"Overriding: {key} = {attempt}")
             globals()[key] = attempt

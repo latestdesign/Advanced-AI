@@ -20,13 +20,8 @@ from clip_api import load, tokenize, available_models
 # Configuration — all variables below can be overridden from the command line:
 #   uv run python classify.py --image_path="dog.jpg" --top_k=3
 model_name = "ViT-B/32"   # model variant; see available_models() for full list
-<<<<<<< HEAD
-image_path = None          # path to the input image (required)
-labels = [                 # candidate text labels (without the prompt template)
-=======
 image_path = ""           # path to the input image (required)
 labels = [                # candidate text labels (without the prompt template)
->>>>>>> main
     "a cat",
     "a dog",
     "a car",
@@ -40,17 +35,10 @@ labels = [                # candidate text labels (without the prompt template)
 ]
 prompt_template = "a photo of {}"  # each label is inserted as {}
 top_k = 5                  # number of top predictions to display
-<<<<<<< HEAD
-device = "cpu"             # 'cpu', 'cuda', 'cuda:0', etc.
-seed = 1337
-# -----------------------------------------------------------------------------
-exec(open("configurator.py").read())  # overrides from command line or config file
-=======
 device = "cuda"             # 'cpu', 'cuda', 'cuda:0', etc.
 seed = 1337
 # -----------------------------------------------------------------------------
 exec(open(f"{os.getcwd()}/configurator.py").read())  # overrides from command line or config file
->>>>>>> main
 # -----------------------------------------------------------------------------
 
 assert image_path is not None, (

@@ -54,11 +54,7 @@ Save the following command as an alias in your `~/.bashrc` to avoid having to wr
 alias run_apptainer_login="apptainer shell \
 --env PATH=$HOME/.local/bin:$PATH \
 --env UV_PROJECT_ENVIRONMENT=/tmpdir/YOUR_USERNAME/envs/aai \
-<<<<<<< HEAD
---env HF_HOME=/work/shared/TPIRT/huggingface \
-=======
 --env HF_HOME=/work/formation/YOUR_USERNAME/huggingface \
->>>>>>> main
 --bind /tmpdir,/work \
 --nv /work/conteneurs/sessions-interactives/pytorch-24.02-py3-calmip-si.sif"
 ```
@@ -89,11 +85,7 @@ alias run_apptainer_gpu="srun -p shared -n1 --gres=gpu:1 --pty apptainer shell \
 --env PATH=$HOME/.local/bin:$PATH \
 --env UV_PROJECT_ENVIRONMENT=/tmpdir/YOUR_USERNAME/envs/aai \
 --env UV_NO_SYNC=true \
-<<<<<<< HEAD
---env HF_HOME=/work/shared/TPIRT/huggingface \
-=======
 --env HF_HOME=/work/formation/YOUR_USERNAME/huggingface \
->>>>>>> main
 --env HF_HUB_OFFLINE=1 \
 --env HF_DATASETS_OFFLINE=1 \
 --env TRANSFORMERS_OFFLINE=1 \
@@ -132,11 +124,7 @@ apptainer exec \
 --env PATH=$HOME/.local/bin:$PATH \
 --env UV_PROJECT_ENVIRONMENT=/tmpdir/YOUR_USERNAME/envs/aai \
 --env UV_NO_SYNC=true \
-<<<<<<< HEAD
---env HF_HOME=/work/shared/TPIRT/huggingface \
-=======
 --env HF_HOME=/work/formation/YOUR_USERNAME/huggingface \
->>>>>>> main
 --env HF_HUB_OFFLINE=1 \
 --env HF_DATASETS_OFFLINE=1 \
 --env TRANSFORMERS_OFFLINE=1 \
@@ -145,11 +133,7 @@ apptainer exec \
 uv run python mon_script.py
 ```
 
-<<<<<<< HEAD
-You can find this tamplate on `sbatch_scripts/template.sbatch` in the project. Take the time to understand each `#SBATCH` line of the script:
-=======
 Take the time to understand each `#SBATCH` line of the script:
->>>>>>> main
 
 - `--nodes 1`: Number of nodes to use (1 in our case)
 - `--ntasks 1`: Number of tasks to run (1 in our case, it is the number of times the command will be run.
@@ -369,11 +353,7 @@ uv run generate.py --checkpoint checkpoints/projector.pt --image my_image.jpg --
 Fetch any image you want e.g. on google image. Click on the image, and in the original website right click and select "copy image url". It gets you a url like `https://www.mydomain.com/my_image.jpg`. Then you can download it with `wget`:
 
 ```bash
-<<<<<<< HEAD
-wget https://www.mydomain.com/my_image.jpg -O my_image.jpg)
-=======
 wget https://www.mydomain.com/my_image.jpg -O my_image.jpg
->>>>>>> main
 ```
 
 and use it for generation.

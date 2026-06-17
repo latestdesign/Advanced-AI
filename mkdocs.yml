@@ -29,10 +29,7 @@ theme:
 
 nav:
   - Welcome: index.md
-<<<<<<< HEAD
-=======
   - Project: project.md
->>>>>>> main
   - Programming Practicals:
       - "PP1: GPT-2": practicals/pp1-gpt2.md
       - "PP2: Vision": practicals/pp2-vision.md
@@ -41,13 +38,9 @@ nav:
       - "PP5: Pretraining GPT2": practicals/pp5-pretraining.md
       - "PP6: Self-Supervised Learning": practicals/pp6-ssl.md
       - "PP7: VLM Warmup": practicals/pp7-vlm-warmup.md
-<<<<<<< HEAD
-  - Lecture Notes: lecture_notes.md
-=======
       - "PP8: Deploying a VLM chatbot": practicals/pp8-deployment.md
   - Lecture Notes: lecture_notes.md
   - Turpan Cheatsheet: turpan_cheatsheet.md
->>>>>>> main
 
 markdown_extensions:
   - admonition
