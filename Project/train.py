@@ -60,7 +60,7 @@ def get_lr(step: int, max_lr: float, max_steps: int, warmup_fraction: float) -> 
 
 # ── Data loading (PROVIDED) ───────────────────────────────────────────────────
 def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig, seed: int = 42):
-    from datasets import load_from_disk, interleave_datasets
+    from datasets import load_from_disk, concatenate_datasets
 
     if not train_cfg.dataset_local_path:
         raise ValueError(
@@ -125,28 +125,21 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig, seed: int = 42):
                 "Run prepare_datasets.py first."
             )
 
-        n_train = sum(len(s) for s in train_splits)
-        n_val = sum(len(s) for s in val_splits)
+        train_ds = concatenate_datasets(train_splits)
+        val_ds = concatenate_datasets(val_splits)
         print(
-            f"Interleaving {len(train_splits)} subsets → "
-            f"{n_train} train | {n_val} val samples"
+            f"Concatenated {len(train_splits)} subsets → "
+            f"{len(train_ds)} train | {len(val_ds)} val samples"
         )
 
-        # fix: concat+buffer-shuffle only mixed a local window, so the stream ran
-        # near-homogeneous subset blocks -> the model drifted into each subset and
-        # val (also head-biased) rose. interleave each subset as its own shuffled
-        # iterable so every batch is heterogeneous; size-proportional probs keep the
-        # pooled distribution, all_exhausted recycles small subsets up to max_steps.
-        def _mix(splits, buf, sd):
-            iters = [s.to_iterable_dataset(num_shards=min(4, len(s))).shuffle(buffer_size=buf, seed=sd)
-                     for s in splits]
-            total = sum(len(s) for s in splits)
-            probs = [len(s) / total for s in splits]
-            return interleave_datasets(iters, probabilities=probs,
-                                       stopping_strategy="all_exhausted", seed=sd)
-
-        train_ds = _mix(train_splits, 2000, seed)
-        val_ds = _mix(val_splits, 1000, 42)   # fixed seed -> stable, stratified val
+        # fix: subsets sit contiguously, so few big shards left each batch stuck in
+        # one subset (loss drifted per-block, val rose). many small shards let
+        # .shuffle() permute shard read-order -> batches span dozens of subsets,
+        # while reads stay sequential within a shard. (row-level interleave_datasets
+        # across 47 files thrashed the network FS ~50x; high shard count mixes
+        # without that cost.)
+        train_ds = train_ds.to_iterable_dataset(num_shards=min(1024, len(train_ds))).shuffle(buffer_size=10000, seed=seed)
+        val_ds = val_ds.to_iterable_dataset(num_shards=min(256, len(val_ds))).shuffle(buffer_size=2000, seed=42)
 
         from data.dataset import CauldronDataset
         train_dataset = CauldronDataset(
