@@ -39,3 +39,4 @@ Project/eval_results/
 
 # Keep this specific dataset artifact tracked
 !PP5: Pretraining GPT2/data/french_philosophy/*.bin
+!Project/checkpoints/*.py
