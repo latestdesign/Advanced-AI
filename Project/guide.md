@@ -87,17 +87,19 @@ sbatch run_job.sbatch train.py \
   --resume_from /tmpdir/$USER/checkpoints \
   --metrics_file /tmpdir/$USER/checkpoints/metrics.csv
 ```
-`--dataset_type cauldron` et `--max_steps 10000` sont déjà les valeurs par défaut.
-Un checkpoint de reprise complet est écrit tous les 2500 steps, et un dossier
-`best_step*` à chaque amélioration de la validation.
+`--dataset_type cauldron` et `--max_steps 10000` sont les valeurs par défaut. Un
+checkpoint de reprise est écrit tous les 2500 steps (seul le dernier est gardé), plus
+un dossier `best_step*` au meilleur `val_loss`.
 
-`--metrics_file` écrit un CSV (`step,metric,value` : `train_loss`, `val_loss`,
-`mmstar_acc`) pour tracer les courbes après coup. Il est rangé avec les checkpoints,
-donc `fetch_checkpoints.sh` le récupère aussi. À la reprise, les steps re-joués sont
-purgés du CSV pour qu'il reste monotone.
+Options utiles (à ajouter à la commande) :
+- `--metrics_file /tmpdir/$USER/checkpoints/metrics.csv` — courbes train/val dans un
+  CSV (`step,metric,value`) à tracer après coup.
+- `--milestone_interval 10000` — garde en plus une copie permanente (poids +
+  optimiseur, `ckpt_milestone*.pt`) tous les 10k steps, pour des expériences ultérieures.
 
-Raccourci équivalent (alias `train_vlm` de l'annexe) : `train_vlm`, qui accepte aussi
-des surcharges, ex. `train_vlm --max_steps 20000`.
+`fetch_checkpoints.sh` ramène tout en local (best, ckpt, milestones, metrics.csv).
+
+Raccourci `train_vlm` (annexe), surcharges acceptées : `train_vlm --max_steps 20000`.
 
 ## 3. Suivi
 

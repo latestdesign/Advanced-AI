@@ -271,5 +271,9 @@ class TrainConfig:
     # '' disables logging. Appended across resumes, pruned of re-done steps.
     metrics_file: str = ''
 
+    # Permanent full-state snapshots every N steps (ckpt_milestone{N}.pt, never
+    # rotated) for experiments; 0 disables. Main resume/best stay last-only.
+    milestone_interval: int = 0
+
     # Whether to apply torch.compile() to the model for potential speedup
     compile: bool = False

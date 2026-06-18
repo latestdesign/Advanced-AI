@@ -33,6 +33,7 @@ mkdir -p "$DEST"
 # les motifs sont développés côté source (pas de correspondance -> message, pas d'arrêt)
 rsync -avz --progress "$SRC/best_step"*   "$DEST/" || echo "  (pas encore de best_step*)"
 rsync -avz --progress "$SRC/ckpt_step"*.pt "$DEST/" || echo "  (pas encore de ckpt_step*.pt)"
+rsync -avz --progress "$SRC/ckpt_milestone"*.pt "$DEST/" || echo "  (pas de ckpt_milestone*.pt)"
 rsync -avz --progress "$SRC/metrics.csv"   "$DEST/" || echo "  (pas de metrics.csv)"
 
 echo "--- checkpoints locaux ---"

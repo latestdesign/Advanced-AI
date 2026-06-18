@@ -214,13 +214,13 @@ def find_resume_checkpoint(path):
     return path if os.path.exists(path) else None
 
 
-def save_checkpoint(checkpoint_dir, model, optimizer, global_step, best_val_loss,
-                    best_mmstar_acc, resume_count, device, keep_last):
+def _ckpt_state(model, optimizer, global_step, best_val_loss, best_mmstar_acc,
+                resume_count, device):
     # everything needed to continue training byte-for-byte: weights, AdamW moments
     # (without these the first resumed step overshoots), the step counter (the LR
     # schedule is a pure function of it), best-metric trackers, and RNG so dropout
     # etc. line up. data cursor is intentionally not saved (see train()).
-    state = {
+    return {
         "model": model.state_dict(),
         "optimizer": optimizer.state_dict(),
         "global_step": global_step,
@@ -231,18 +231,37 @@ def save_checkpoint(checkpoint_dir, model, optimizer, global_step, best_val_loss
         "torch_rng": torch.get_rng_state(),
         "cuda_rng": torch.cuda.get_rng_state_all() if device.type == "cuda" else None,
     }
+
+
+def _atomic_save(state, path):
     # write to a temp file then os.replace: the swap is atomic, so a crash mid-write
     # can never leave a half-written checkpoint that fails to load.
-    path = os.path.join(checkpoint_dir, f"ckpt_step{global_step}.pt")
     tmp = path + ".tmp"
     torch.save(state, tmp)
     os.replace(tmp, path)
+
+
+def save_checkpoint(checkpoint_dir, model, optimizer, global_step, best_val_loss,
+                    best_mmstar_acc, resume_count, device, keep_last):
+    state = _ckpt_state(model, optimizer, global_step, best_val_loss,
+                        best_mmstar_acc, resume_count, device)
+    _atomic_save(state, os.path.join(checkpoint_dir, f"ckpt_step{global_step}.pt"))
     # rotate: keep only the newest keep_last checkpoints (each is ~weights+optimizer,
     # several GB) so we always have a few rollback points without filling scratch.
     ckpts = sorted(glob.glob(os.path.join(checkpoint_dir, "ckpt_step*.pt")),
                    key=_ckpt_step)
     for old in ckpts[:-keep_last]:
         os.remove(old)
+
+
+def save_milestone(checkpoint_dir, model, optimizer, global_step, best_val_loss,
+                   best_mmstar_acc, resume_count, device):
+    # permanent snapshot for later experiments: same full state as a resume ckpt but
+    # a distinct name so rotation never prunes it (find_resume_checkpoint ignores it
+    # too, so it doesn't interfere with normal resume).
+    state = _ckpt_state(model, optimizer, global_step, best_val_loss,
+                        best_mmstar_acc, resume_count, device)
+    _atomic_save(state, os.path.join(checkpoint_dir, f"ckpt_milestone{global_step}.pt"))
 
 
 def prune_best(checkpoint_dir, prefix, keep_path):
@@ -486,6 +505,18 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
             except Exception as e:
                 # a failed save (e.g. full disk) must not kill a healthy run
                 print(f"  [warn] checkpoint save failed: {e}")
+
+        # ── Permanent milestone snapshot (kept for experiments, never rotated) ──
+        if (is_update_step and train_cfg.milestone_interval > 0
+                and global_step % train_cfg.milestone_interval == 0):
+            try:
+                save_milestone(
+                    train_cfg.checkpoint_dir, model, optimizer, global_step,
+                    best_val_loss, best_mmstar_acc, resume_count, device,
+                )
+                print(f"  milestone snapshot saved at step {global_step}")
+            except Exception as e:
+                print(f"  [warn] milestone save failed: {e}")
 
         # ── Evaluation ────────────────────────────────────────────────────────
         if is_update_step and global_step % train_cfg.eval_interval == 0:
