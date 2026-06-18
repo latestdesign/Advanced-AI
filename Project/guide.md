@@ -84,11 +84,17 @@ Depuis `Project/` :
 sbatch run_job.sbatch train.py \
   --shuffled_path /tmpdir/$USER/cauldron_shuffled \
   --checkpoint_dir /tmpdir/$USER/checkpoints \
-  --resume_from /tmpdir/$USER/checkpoints
+  --resume_from /tmpdir/$USER/checkpoints \
+  --metrics_file /tmpdir/$USER/checkpoints/metrics.csv
 ```
 `--dataset_type cauldron` et `--max_steps 10000` sont déjà les valeurs par défaut.
 Un checkpoint de reprise complet est écrit tous les 2500 steps, et un dossier
 `best_step*` à chaque amélioration de la validation.
+
+`--metrics_file` écrit un CSV (`step,metric,value` : `train_loss`, `val_loss`,
+`mmstar_acc`) pour tracer les courbes après coup. Il est rangé avec les checkpoints,
+donc `fetch_checkpoints.sh` le récupère aussi. À la reprise, les steps re-joués sont
+purgés du CSV pour qu'il reste monotone.
 
 Raccourci équivalent (alias `train_vlm` de l'annexe) : `train_vlm`, qui accepte aussi
 des surcharges, ex. `train_vlm --max_steps 20000`.
@@ -195,7 +201,8 @@ train_vlm() {
   subjob run_job.sbatch train.py \
     --shuffled_path /tmpdir/$USER/cauldron_shuffled \
     --checkpoint_dir /tmpdir/$USER/checkpoints \
-    --resume_from /tmpdir/$USER/checkpoints "$@"
+    --resume_from /tmpdir/$USER/checkpoints \
+    --metrics_file /tmpdir/$USER/checkpoints/metrics.csv "$@"
 }
 ```
 

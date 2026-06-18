@@ -267,6 +267,36 @@ def load_checkpoint(path, model, optimizer, device):
             ckpt["best_mmstar_acc"], ckpt["resume_count"])
 
 
+def append_metrics(path, step, **metrics):
+    # one row per metric in long form (step,metric,value) so train/val/mmstar — logged
+    # at different cadences — all append cleanly into one plottable file.
+    if not path:
+        return
+    new = not os.path.exists(path) or os.path.getsize(path) == 0
+    if new:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "a") as f:
+        if new:
+            f.write("step,metric,value\n")
+        for k, v in metrics.items():
+            f.write(f"{step},{k},{v}\n")
+
+
+def truncate_metrics(path, step):
+    # on resume we re-do the steps after the last checkpoint; drop their rows so the
+    # csv stays monotonic and a plot doesn't jump backwards.
+    if not path or not os.path.exists(path):
+        return
+    with open(path) as f:
+        lines = f.readlines()
+    if len(lines) <= 1:
+        return
+    kept = [r for r in lines[1:] if r[:r.find(",")].isdigit() and int(r[:r.find(",")]) <= step]
+    with open(path, "w") as f:
+        f.write(lines[0])
+        f.writelines(kept)
+
+
 # ── Main training function ────────────────────────────────────────────────────
 def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
     # ── Device ────────────────────────────────────────────────────────────────
@@ -343,6 +373,7 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
     # we advance through the data instead of replaying the head. Fallback path has no
     # tracked cursor, so we also bump the buffer-shuffle seed per resume for coverage.
     skip_samples = global_step * train_cfg.batch_size * train_cfg.gradient_accumulation_steps
+    truncate_metrics(train_cfg.metrics_file, global_step)
     train_loader, val_loader = get_dataloaders(
         train_cfg, vlm_cfg, seed=42 + resume_count, skip_samples=skip_samples
     )
@@ -442,6 +473,7 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
                 f"step {global_step:6d} | loss {batch_loss:.6f}"
                 f" | {elapsed:.1f}s"
             )
+            append_metrics(train_cfg.metrics_file, global_step, train_loss=batch_loss)
 
         # ── Periodic resume checkpoint (step-tagged, keeps newest keep_checkpoints) ─
         if is_update_step and global_step % train_cfg.save_interval == 0:
@@ -480,6 +512,7 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
                 if val_losses else float("nan")
             )
             print(f"step {global_step:6d} | val_loss {avg_val:.6f}")
+            append_metrics(train_cfg.metrics_file, global_step, val_loss=avg_val)
 
             if avg_val < best_val_loss:
                 best_val_loss = avg_val
@@ -517,6 +550,7 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
                     f"step {global_step:6d} | mmstar_val_acc "
                     f"{mmstar_acc:.6f}"
                 )
+                append_metrics(train_cfg.metrics_file, global_step, mmstar_acc=mmstar_acc)
 
                 os.makedirs(train_cfg.mmstar_output_dir, exist_ok=True)
                 mmstar_path = os.path.join(

@@ -267,5 +267,9 @@ class TrainConfig:
     # is auto-picked); '' starts fresh
     resume_from: str = ''
 
+    # CSV of train/val/mmstar metrics for plotting (long form: step,metric,value);
+    # '' disables logging. Appended across resumes, pruned of re-done steps.
+    metrics_file: str = ''
+
     # Whether to apply torch.compile() to the model for potential speedup
     compile: bool = False
