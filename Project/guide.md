@@ -101,6 +101,39 @@ Options utiles (à ajouter à la commande) :
 
 Raccourci `train_vlm` (annexe), surcharges acceptées : `train_vlm --max_steps 20000`.
 
+## 2 bis. Run long en chaîne (100k steps)
+
+Un job est plafonné à 4 h ; un entraînement de 100k steps (~1 époque, ~27 h) doit donc
+être découpé. `chain_train.sh` soumet une **chaîne de jobs de 4 h** liés par une
+dépendance `afterany` : chacun reprend le dernier checkpoint et le suivant démarre dès
+que le précédent se termine (timeout, fin ou échec). La chaîne vit dans la file SLURM —
+pas de tmux ni de nœud de login à surveiller, elle survit aux déconnexions.
+
+Depuis `Project/`, sur un **dossier de checkpoints vide** (le premier job démarre alors
+de zéro) :
+```bash
+./chain_train.sh 12 100000 1000 10000 10000
+```
+Arguments positionnels `[n_jobs] [max_steps] [save_interval] [milestone_interval] [mmstar_interval]` :
+- `12` — nombre de jobs de 4 h enchaînés (~13k steps/job → 100k atteint avec marge ;
+  les jobs en trop ne font rien une fois `max_steps` atteint).
+- `100000` — cible de steps.
+- `1000` — fréquence des checkpoints de reprise (`ckpt_step*.pt` + `best_step*`).
+- `10000` — copie permanente `ckpt_milestone*.pt` tous les 10k steps.
+- `10000` — éval MMStar en cours d'entraînement tous les 10k steps (défaut `0` =
+  désactivé, donc à préciser explicitement).
+
+Avant un run neuf, vider le dossier — sinon le premier job reprend les anciens poids et
+`metrics.csv` s'ajoute à l'ancien :
+```bash
+rm -rf /tmpdir/$USER/checkpoints && mkdir -p /tmpdir/$USER/checkpoints
+```
+
+Étendre une chaîne déjà en cours sans la perturber : passer l'`id` du dernier job en 6e
+argument (`after_jobid`) — le premier nouveau job s'y accroche en `afterany`.
+
+Tout arrêter : `scancel -n vlm`. Le suivi se fait avec les mêmes alias (`sq`, `jlog`).
+
 ## 3. Suivi
 
 Avec les alias de l'annexe :
