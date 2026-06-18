@@ -40,7 +40,7 @@ def main():
 
     if "train_loss" in wide:
         tr = wide["train_loss"].dropna()
-        ax.plot(tr.index, tr.values, color="#9ecae1", lw=0.8, alpha=0.6,
+        ax.plot(tr.index, tr.values, color="#9ecae1", lw=1.0, alpha=0.9,
                 label="train (raw)")
         sm = ema(tr, args.ema)
         ax.plot(sm.index, sm.values, color="#08519c", lw=2.0,
