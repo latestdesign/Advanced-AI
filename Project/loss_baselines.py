@@ -17,6 +17,12 @@ log); perplexity = exp(CE):
 Run on Turpan inside run_apptainer_gpu, from Project/:
     uv run --no-sync python loss_baselines.py \
         --shuffled_path /tmpdir/$USER/cauldron_shuffled --n_batches 64
+
+Results on Turpan (2024-06-05) with 64 batches of 16 examples each:
+baseline                   CE (nats)    perplexity
+step-0 VLM                    1.6716          5.32
+text-only (ablated)           1.6877          5.41
+uniform ln(49153)            10.8027      49153.00
 """
 import argparse
 import math
