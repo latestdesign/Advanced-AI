@@ -36,6 +36,10 @@ nanoVLM
 Project/checkpoints/*/
 Project/checkpoints/*
 Project/eval_results/
+.claude
+*.md
 
 # Keep this specific dataset artifact tracked
 !PP5: Pretraining GPT2/data/french_philosophy/*.bin
+!Project/checkpoints/*.py
+!README.md
