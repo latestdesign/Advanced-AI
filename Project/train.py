@@ -128,10 +128,12 @@ def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig, seed: int = 42,
             # map-style source -> give each DataLoader worker a contiguous slice
             # (reads stay sequential, no duplication) so we can parallelise decode.
             def __iter__(self):
+                original = self.dataset
                 info = get_worker_info()
                 if info is not None:
                     self.dataset = self.dataset.shard(info.num_workers, info.id, contiguous=True)
                 yield from super().__iter__()
+                self.dataset = original
 
         train_dataset = _ShardedCauldron(train_ds, tokenizer, image_processor, vlm_cfg)
         val_dataset = CauldronDataset(val_ds, tokenizer, image_processor, vlm_cfg)
