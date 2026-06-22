@@ -13,7 +13,7 @@ Full assignment: https://paulnovello.github.io/Advanced-AI/project/
 
 ---
 
-# Out of scope training details
+# Additional training engineering & infrastructure
 
 The assignment skeleton leaves the model internals and the training step as `#TODO`
 slots. Everything documented below is the **infrastructure built around those TODOs** —
