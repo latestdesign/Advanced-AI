@@ -16,7 +16,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
-REMOTE_METRICS = "turpan:/tmpdir/tpirtlkpl/checkpoints/metrics.csv"
+REMOTE_METRICS = "turpan:/tmpdir/tpirtgstrt/checkpoints/metrics.csv"
 
 
 def ema(series, alpha):
