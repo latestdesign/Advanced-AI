@@ -24,7 +24,7 @@ def cfg():
             hidden_dim=32,
             inter_dim=64,
             patch_size=16,
-            img_size=512,   # real size — still produces 1024 patches
+            img_size=512,  # real size — still produces 1024 patches
             n_heads=4,
             n_blocks=2,
         ),
@@ -103,7 +103,7 @@ class TestVLMForward:
 
         assert logits.shape == (B, T, cfg.lm.vocab_size)
         assert loss is not None
-        assert loss.shape == ()       # scalar
+        assert loss.shape == ()  # scalar
         assert torch.isfinite(loss)
 
     def test_image_token_replacement(self, cfg, model):

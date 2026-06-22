@@ -91,9 +91,9 @@ class RotaryEmbedding(nn.Module):
         super().__init__()
         assert cfg.hidden_dim % cfg.n_heads == 0
         self.dim = cfg.hidden_dim // cfg.n_heads  # head_dim = 64
-        self.re_base = cfg.re_base                # 100_000
+        self.re_base = cfg.re_base  # 100_000
         self.max_position_embeddings = cfg.max_position_embeddings
-        self.attn_scaling = cfg.attn_scaling      # 1.0
+        self.attn_scaling = cfg.attn_scaling  # 1.0
 
         # inv_freq[i] = 1 / (re_base ^ (2i / dim)),  shape [dim/2]
         inv_freq = 1.0 / (
@@ -185,22 +185,22 @@ class LMAttention(nn.Module):
     """
     def __init__(self, cfg):
         super().__init__()
-        self.n_heads = cfg.n_heads       # 15
+        self.n_heads = cfg.n_heads  # 15
         self.n_kv_heads = cfg.n_kv_heads  # 5
         self.hidden_dim = cfg.hidden_dim  # 960
         self.dropout = cfg.dropout
 
         assert self.n_heads % self.n_kv_heads == 0
 
-        self.n_kv_groups = self.n_heads // self.n_kv_heads   # query heads per KV head (n_heads // n_kv_heads)
-        self.head_dim = self.hidden_dim // self.n_heads      # embedding dimension per attention head
-        self.q_proj = nn.Linear(self.hidden_dim, self.hidden_dim, bias=False)        # Linear: hidden_dim → n_heads × head_dim (no bias)
-        self.k_proj = nn.Linear(self.hidden_dim, self.hidden_dim // self.n_kv_groups, bias=False)        # Linear: hidden_dim → n_kv_heads × head_dim (no bias)
-        self.v_proj = nn.Linear(self.hidden_dim, self.hidden_dim // self.n_kv_groups, bias=False)        # Linear: same output shape as k_proj (no bias)
-        self.out_proj = nn.Linear(self.hidden_dim, self.hidden_dim, bias=False)      # Linear: hidden_dim → hidden_dim (no bias)
+        self.n_kv_groups = self.n_heads // self.n_kv_heads  # query heads per KV head (n_heads // n_kv_heads)
+        self.head_dim = self.hidden_dim // self.n_heads  # embedding dimension per attention head
+        self.q_proj = nn.Linear(self.hidden_dim, self.hidden_dim, bias=False)  # Linear: hidden_dim → n_heads × head_dim (no bias)
+        self.k_proj = nn.Linear(self.hidden_dim, self.hidden_dim // self.n_kv_groups, bias=False)  # Linear: hidden_dim → n_kv_heads × head_dim (no bias)
+        self.v_proj = nn.Linear(self.hidden_dim, self.hidden_dim // self.n_kv_groups, bias=False)  # Linear: same output shape as k_proj (no bias)
+        self.out_proj = nn.Linear(self.hidden_dim, self.hidden_dim, bias=False)  # Linear: hidden_dim → hidden_dim (no bias)
         self.attn_dropout = nn.Dropout(cfg.dropout)  # Dropout on attention weights
         self.resid_dropout =  nn.Dropout(cfg.dropout) # Dropout on the output
-        self.sdpa = hasattr(F, "scaled_dot_product_attention")          # True if F.scaled_dot_product_attention is available
+        self.sdpa = hasattr(F, "scaled_dot_product_attention")  # True if F.scaled_dot_product_attention is available
 
     def forward(self, x, cos, sin, attention_mask=None, block_kv_cache=None):
         """
@@ -352,17 +352,16 @@ class LMMLP(nn.Module):
         return out
 
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 class LMBlock(nn.Module):
     """Pre-norm residual block.  Attention returns (output, cache) — unpack!"""
     def __init__(self, cfg):
         super().__init__()
 
-        self.norm1 = RMSNorm(cfg)     # RMSNorm applied before attention
+        self.norm1 = RMSNorm(cfg)  # RMSNorm applied before attention
         self.attn = LMAttention(cfg)  # the LMAttention sub-layer
-        self.norm2 = RMSNorm(cfg)     # RMSNorm applied before the MLP
-        self.mlp = LMMLP(cfg)         # the LMMLP sub-layer
+        self.norm2 = RMSNorm(cfg)  # RMSNorm applied before the MLP
+        self.mlp = LMMLP(cfg)  # the LMMLP sub-layer
 
     def forward(self, x, cos, sin, attention_mask=None, block_kv_cache=None):
         """
@@ -403,7 +402,7 @@ class LanguageModel(nn.Module):
         self.tie_weights = cfg.tie_weights
 
         self.token_embedding =  nn.Embedding(cfg.vocab_size, cfg.hidden_dim) # Embedding table: vocab_size → hidden_dim
-        self.rotary_embd = RotaryEmbedding(cfg)   # the RotaryEmbedding module
+        self.rotary_embd = RotaryEmbedding(cfg)  # the RotaryEmbedding module
         self.blocks = nn.ModuleList([LMBlock(cfg) for _ in range(cfg.n_blocks)])  # ModuleList of n_blocks LMBlock layers
         self.norm = RMSNorm(cfg)  # final RMSNorm
         self.head = nn.Linear(cfg.hidden_dim, cfg.vocab_size, bias=False)  # Linear: hidden_dim → vocab_size (no bias)

@@ -21,7 +21,7 @@ def cfg():
 
 
 B = 2
-VIT_PATCHES = 1024   # (512/16)^2
+VIT_PATCHES = 1024  # (512/16)^2
 
 
 class TestModalityProjector:

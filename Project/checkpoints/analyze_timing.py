@@ -1,17 +1,31 @@
 #!/usr/bin/env python
-# temp: parse per-50-step wall time from chain job logs, plot trend + ETA to 100k.
-# pass --pull to rsync the latest leg logs from turpan first.
-import glob, os, re, subprocess, sys
+# Parse per-50-step wall time from chain job logs, plot the throughput trend + ETA.
+# --pull rsyncs the latest leg logs from turpan first; --min-job sets the first job
+# id of the chain to include (defaults to the current 100k run).
+import argparse
+import glob
+import os
+import re
+import subprocess
+import sys
+
 import numpy as np
 import matplotlib.pyplot as plt
 
+ap = argparse.ArgumentParser()
+ap.add_argument("--pull", action="store_true",
+                help="rsync the latest leg logs from turpan first")
+ap.add_argument("--min-job", type=int, default=92405,
+                help="first job id of the chain to include")
+args = ap.parse_args()
+
 TARGET = 100000
-MIN_JOB = 92405          # first leg of the current 100k chain; bump for a new run
+MIN_JOB = args.min_job
 REMOTE_LOGS = "turpan:job_results/out/job_*.out"
 line = re.compile(r"step\s+(\d+)\s+\|\s+loss\s+[\d.]+\s+\|\s+([\d.]+)s")
 jobid = re.compile(r"job_(\d+)\.out$")
 
-if "--pull" in sys.argv:
+if args.pull:
     os.makedirs("joblogs", exist_ok=True)
     if subprocess.run(["rsync", "-az", REMOTE_LOGS, "joblogs/"]).returncode:
         print("pull failed — using existing local logs")

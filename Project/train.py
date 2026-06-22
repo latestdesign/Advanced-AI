@@ -58,7 +58,7 @@ def get_lr(step: int, max_lr: float, max_steps: int, warmup_fraction: float) -> 
     )
 
 
-# ── Data loading (PROVIDED) ───────────────────────────────────────────────────
+# ── Data loading (PROVIDED & MODIFIED BY US) ─────────────────────────────────
 def get_dataloaders(train_cfg: TrainConfig, vlm_cfg: VLMConfig, seed: int = 42,
                     skip_samples: int = 0):
     from datasets import load_from_disk, concatenate_datasets
@@ -384,7 +384,7 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
             global_step, best_val_loss, best_mmstar_acc, resume_count = load_checkpoint(
                 ckpt_path, model, optimizer, device
             )
-            resume_count += 1   # count this resume so the seed below changes
+            resume_count += 1  # count this resume so the seed below changes
         else:
             print(f"No checkpoint found at {train_cfg.resume_from}; starting fresh")
 
@@ -412,8 +412,8 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
     os.makedirs(train_cfg.checkpoint_dir, exist_ok=True)
 
     # ── Training state (global_step/best_* set above so resume can restore them) ─
-    batch_loss = 0.0   # set by the student section each micro-step
-    accum_loss_sum = 0.0   # fix: running sum to log the accumulation-window mean
+    batch_loss = 0.0  # set by the student section each micro-step
+    accum_loss_sum = 0.0  # fix: running sum to log the accumulation-window mean
     optimizer.zero_grad()
 
     print(
@@ -425,7 +425,7 @@ def train(train_cfg: TrainConfig, vlm_cfg: VLMConfig):
     # ═══════════════════════════════════════════════════════════════════════════
     # MAIN TRAINING LOOP
     # ═══════════════════════════════════════════════════════════════════════════
-    accum_step = 0   # counts micro-steps within one accumulation cycle
+    accum_step = 0  # counts micro-steps within one accumulation cycle
     while global_step < train_cfg.max_steps:
         model.train()
 

@@ -49,18 +49,18 @@ class ViTPatchEmbeddings(nn.Module):
     """
     def __init__(self, cfg):
         super().__init__()
-        self.img_size = cfg.img_size    # 512(hauteur = largeur)
+        self.img_size = cfg.img_size  # 512(hauteur = largeur)
         self.patch_size = cfg.patch_size  # 16
         self.hidden_dim = cfg.hidden_dim  # 768
 
-        self.num_patches = (self.img_size//self.patch_size)**2          # total patches = (img_size // patch_size)²
+        self.num_patches = (self.img_size//self.patch_size)**2  # total patches = (img_size // patch_size)²
         self.conv = nn.Conv2d(in_channels = 3, out_channels=self.hidden_dim, padding="valid",
                               kernel_size= self.patch_size, stride = self.patch_size)
-                                        # Conv2d patch extractor: kernel_size and stride
-        #                                 # both equal to patch_size, in_channels=3,
-        #                                 # out_channels=hidden_dim, padding="valid"
-        self.position_embedding = nn.Parameter(torch.zeros(1, self.num_patches, self.hidden_dim))   # learnable nn.Parameter of shape
-        #                                 # [1, num_patches, hidden_dim]
+        # Conv2d patch extractor: kernel_size and stride
+        # both equal to patch_size, in_channels=3,
+        # out_channels=hidden_dim, padding="valid"
+        self.position_embedding = nn.Parameter(torch.zeros(1, self.num_patches, self.hidden_dim))  # learnable nn.Parameter of shape
+        # [1, num_patches, hidden_dim]
 
 
     def forward(self, x):
@@ -88,7 +88,6 @@ class ViTPatchEmbeddings(nn.Module):
         return x
 
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 class ViTAttention(nn.Module):
     """Multi-head self-attention for the ViT encoder (bidirectional).
@@ -102,25 +101,23 @@ class ViTAttention(nn.Module):
     """
     def __init__(self, cfg):
         super().__init__()
-        self.n_heads = cfg.n_heads       # 12
+        self.n_heads = cfg.n_heads  # 12
         self.hidden_dim = cfg.hidden_dim  # 768
         assert self.hidden_dim % self.n_heads == 0
         self.dropout = cfg.dropout
 
-        self.head_dim = self.hidden_dim // self.n_heads        # embedding dimension per attention head
+        self.head_dim = self.hidden_dim // self.n_heads  # embedding dimension per attention head
         self.qkv_proj = nn.Linear(in_features = self.hidden_dim,
-                                  out_features = self.hidden_dim * 3, bias = True)          # single Linear: hidden_dim → 3 × hidden_dim
-        #                              # (Q, K, V packed together; bias=True)
+                                  out_features = self.hidden_dim * 3, bias = True)  # single Linear: hidden_dim → 3 × hidden_dim
+        # (Q, K, V packed together; bias=True)
         self.out_proj = nn.Linear(in_features = self.hidden_dim,
-                                  out_features = self.hidden_dim, bias = True)          # Linear: hidden_dim → hidden_dim (bias=True)
-        ############### il faut mettre quoi  ??   ##########
-        self.attn_dropout = nn.Dropout(cfg.dropout)      # Dropout on attention weights
-        self.resid_dropout = nn.Dropout(cfg.dropout) #self.out_proj)     # Dropout on the output projection
+                                  out_features = self.hidden_dim, bias = True)  # Linear: hidden_dim → hidden_dim (bias=True)
+        self.attn_dropout = nn.Dropout(cfg.dropout)  # Dropout on attention weights
+        self.resid_dropout = nn.Dropout(cfg.dropout)  # Dropout on the output projection
         if hasattr(F, 'scaled_dot_product_attention'):
             self.sdpa = True
         else:
-            self.sdpa = False             # True if F.scaled_dot_product_attention is available
-
+            self.sdpa = False  # True if F.scaled_dot_product_attention is available
 
 
     def forward(self, x):
@@ -145,7 +142,7 @@ class ViTAttention(nn.Module):
         # TODO 2: Use view to introduce the head dimension, then transpose
         #         so heads come before the sequence.
         #         Each of q, k, v → [B, n_heads, T, head_dim]
-                #C: hidden_dim = n_heads * head_dim
+        #C: hidden_dim = n_heads * head_dim
 
         q = q.view(B, T, self.n_heads, self.head_dim).transpose(1,2)
         k = k.view(B, T, self.n_heads, self.head_dim).transpose(1,2)
@@ -165,7 +162,7 @@ class ViTAttention(nn.Module):
             x = F.scaled_dot_product_attention(q, k, v, is_causal =False)
 
         else:
-            scores = q@k.transpose(-2,-1) / np.sqrt(self.head_dim)  # fix: typo transpse -> transpose
+            scores = q@k.transpose(-2,-1) / np.sqrt(self.head_dim)
             attention_weights = torch.softmax(scores, dim = -1)
             attention_weights  = self.attn_dropout(attention_weights )
             x = attention_weights @v
@@ -195,10 +192,10 @@ class ViTMLP(nn.Module):
         super().__init__()
         self.hidden_dim = cfg.hidden_dim
         self.inter_dim = cfg.inter_dim
-        self.activation_fn = nn.GELU(approximate='tanh')    # GELU activation (approximate='tanh')
-        self.fc1 = nn.Linear(self.hidden_dim, self.inter_dim)              # Linear: hidden_dim → inter_dim
-        self.fc2 = nn.Linear(self.inter_dim, self.hidden_dim)              # Linear: inter_dim → hidden_dim
-        self.dropout = nn.Dropout(cfg.dropout)         # fix: pass cfg.dropout (bare nn.Dropout() defaults to p=0.5)
+        self.activation_fn = nn.GELU(approximate='tanh')  # GELU activation (approximate='tanh')
+        self.fc1 = nn.Linear(self.hidden_dim, self.inter_dim)  # Linear: hidden_dim → inter_dim
+        self.fc2 = nn.Linear(self.inter_dim, self.hidden_dim)  # Linear: inter_dim → hidden_dim
+        self.dropout = nn.Dropout(cfg.dropout)  # fix: pass cfg.dropout (bare nn.Dropout() defaults to p=0.5)
 
 
     def forward(self, x):
@@ -222,10 +219,10 @@ class ViTBlock(nn.Module):
         super().__init__()
         self.hidden_dim = cfg.hidden_dim
         #layerNorm ---> normalisation se fait tjr sur la dernière dim(hidden_dim ici)
-        self.ln1 = nn.LayerNorm(self.hidden_dim, eps=cfg.ln_eps)    # LayerNorm applied before attention
-        self.attn = ViTAttention(cfg)   # the ViTAttention sub-layer
-        self.ln2 = nn.LayerNorm(self.hidden_dim, eps=cfg.ln_eps)   # LayerNorm applied before the MLP
-        self.mlp = ViTMLP(cfg)    # the ViTMLP sub-layer
+        self.ln1 = nn.LayerNorm(self.hidden_dim, eps=cfg.ln_eps)  # LayerNorm applied before attention
+        self.attn = ViTAttention(cfg)  # the ViTAttention sub-layer
+        self.ln2 = nn.LayerNorm(self.hidden_dim, eps=cfg.ln_eps)  # LayerNorm applied before the MLP
+        self.mlp = ViTMLP(cfg)  # the ViTMLP sub-layer
 
 
     def forward(self, x):
@@ -253,10 +250,10 @@ class ViT(nn.Module):
         self.n_blocks   = cfg.n_blocks
         self.hidden_dim = cfg.hidden_dim
         self.patch_embedding = ViTPatchEmbeddings(cfg)  # the ViTPatchEmbeddings sub-module
-        self.dropout = nn.Dropout(cfg.dropout)         # fix: pass cfg.dropout (bare nn.Dropout() defaults to p=0.5)
+        self.dropout = nn.Dropout(cfg.dropout)  # fix: pass cfg.dropout (bare nn.Dropout() defaults to p=0.5)
         #nn.ModuleList sert à stocker plusieurs sous-modules PyTorch dans une liste
-        self.blocks = nn.ModuleList(ViTBlock(cfg) for i in range(self.n_blocks))         # ModuleList of n_blocks ViTBlock layers
-        self.layer_norm = nn.LayerNorm(cfg.hidden_dim, eps=cfg.ln_eps)       # final LayerNorm (hidden_dim, eps=cfg.ln_eps)
+        self.blocks = nn.ModuleList(ViTBlock(cfg) for i in range(self.n_blocks))  # ModuleList of n_blocks ViTBlock layers
+        self.layer_norm = nn.LayerNorm(cfg.hidden_dim, eps=cfg.ln_eps)  # final LayerNorm (hidden_dim, eps=cfg.ln_eps)
         self.apply(self._init_weights)
 
     def _init_weights(self, module):

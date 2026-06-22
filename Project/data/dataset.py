@@ -11,7 +11,7 @@ to that directory, which avoids HuggingFace's lock-file problem on shared filesy
 
 Loading logic (in train.py):
     if train_cfg.dataset_local_path:
-        raw = load_from_disk(train_cfg.dataset_local_path)   # lock-free Arrow
+        raw = load_from_disk(train_cfg.dataset_local_path)  # lock-free Arrow
         split = raw["train"]
     else:
         split = load_dataset(train_cfg.dataset_path, train_cfg.dataset_name,

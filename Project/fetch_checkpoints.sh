@@ -1,42 +1,42 @@
 #!/usr/bin/env bash
-# Récupère les checkpoints VLM (/tmpdir scratch, purgeable) vers Project/checkpoints/,
-# peu importe le dossier d'où on lance le script.
-#   - lancé sur Turpan        -> copie locale depuis /tmpdir/<compte>/checkpoints
-#   - lancé sur autre machine -> tire par ssh depuis Turpan (compte demandé à Turpan)
-#   best_step*        = meilleurs poids val loss pour l'inférence (save_pretrained)
-#   best_mmstar_step* = meilleurs poids MMStar pour l'inférence (save_pretrained)
-# Les .pt (ckpt_step* de reprise ET ckpt_milestone* par palier) embarquent l'état
-# AdamW + RNG (~5 Go pièce, ~3x le poids seul) : inutiles pour l'inférence/metrics,
-# volontairement ignorés ici. À récupérer manuellement si besoin de reprendre.
+# Fetch the VLM checkpoints (/tmpdir scratch, purgeable) into Project/checkpoints/,
+# regardless of the directory the script is launched from.
+#   - run on Turpan       -> local copy from /tmpdir/<account>/checkpoints
+#   - run on another host  -> pulled over ssh from Turpan (account resolved from Turpan)
+#   best_step*        = best val-loss weights for inference (save_pretrained)
+#   best_mmstar_step* = best MMStar weights for inference (save_pretrained)
+# The .pt files (ckpt_step* resume points AND ckpt_milestone* snapshots) carry the
+# AdamW + RNG state (~5 GB each, ~3x the weights alone): useless for inference/metrics,
+# so they are intentionally skipped here. Pull them by hand if you need to resume.
 #
-# Aucun argument requis. Usage : ./fetch_checkpoints.sh [hote_ssh]   (défaut: turpan)
+# No argument required. Usage: ./fetch_checkpoints.sh [ssh_host]   (default: turpan)
 set -uo pipefail
 
 HOST="${1:-turpan}"
-# destination = Project/checkpoints (relatif au script, pas au répertoire courant)
+# destination = Project/checkpoints (relative to the script, not the current dir)
 DEST="$(cd "$(dirname "$0")" && pwd)/checkpoints"
 ME="$(whoami)"
 
 if [ -d "/tmpdir/$ME/checkpoints" ]; then
-    # on est déjà sur Turpan : les checkpoints sont locaux, pas de ssh
+    # already on Turpan: the checkpoints are local, no ssh needed
     SRC="/tmpdir/$ME/checkpoints"
-    echo "Source locale (Turpan) : $SRC -> $DEST"
+    echo "Local source (Turpan): $SRC -> $DEST"
 else
-    # machine distante : le compte Turpan vient de Turpan lui-même -> rien à saisir
+    # remote machine: the Turpan account is resolved from Turpan itself -> nothing to type
     REMOTE_USER="$(ssh "$HOST" whoami)" || true
     if [ -z "$REMOTE_USER" ]; then
-        echo "Impossible de joindre '$HOST' (compte non résolu). Vérifiez votre config ssh." >&2
+        echo "Cannot reach '$HOST' (account not resolved). Check your ssh config." >&2
         exit 1
     fi
     SRC="$HOST:/tmpdir/$REMOTE_USER/checkpoints"
-    echo "Source distante : $SRC -> $DEST"
+    echo "Remote source: $SRC -> $DEST"
 fi
 
 mkdir -p "$DEST"
-# les motifs sont développés côté source (pas de correspondance -> message, pas d'arrêt)
-rsync -avz --progress "$SRC/best_step"*        "$DEST/" || echo "  (pas encore de best_step*)"
-rsync -avz --progress "$SRC/best_mmstar_step"* "$DEST/" || echo "  (pas encore de best_mmstar_step*)"
-rsync -avz --progress "$SRC/metrics.csv"        "$DEST/" || echo "  (pas de metrics.csv)"
+# patterns are expanded on the source side (no match -> message, no abort)
+rsync -avz --progress "$SRC/best_step"*        "$DEST/" || echo "  (no best_step* yet)"
+rsync -avz --progress "$SRC/best_mmstar_step"* "$DEST/" || echo "  (no best_mmstar_step* yet)"
+rsync -avz --progress "$SRC/metrics.csv"        "$DEST/" || echo "  (no metrics.csv)"
 
-echo "--- checkpoints locaux ---"
+echo "--- local checkpoints ---"
 ls -lh "$DEST"
