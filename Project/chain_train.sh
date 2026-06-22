@@ -9,12 +9,12 @@
 # live chain without disturbing it. Abort the whole chain:  scancel -n vlm
 set -euo pipefail
 N="${1:-12}"
-MAX_STEPS="${2:-100000}"
-SAVE="${3:-1000}"
-MILE="${4:-10000}"
-MMSTAR="${5:-0}"
+MAX_STEPS="${2:-11000}"
+SAVE="${3:-100}"
+MILE="${4:-1000}"
+MMSTAR="${5:-500}"
 AFTER="${6:-}"
-PROJ="$HOME/Advanced-AI/Project"
+PROJ="$HOME/Project-Advanced-AI/Project"
 CKPT="/tmpdir/$USER/checkpoints"
 SHUF="/tmpdir/$USER/cauldron_shuffled"
 

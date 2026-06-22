@@ -188,7 +188,7 @@ class TrainConfig:
 
     # Number of micro-batches accumulated before one optimizer.step();
     # effective batch size = batch_size × gradient_accumulation_steps = 16
-    gradient_accumulation_steps: int = 1
+    gradient_accumulation_steps: int = 8
 
     # Maximum L2 norm for gradient clipping (torch.nn.utils.clip_grad_norm_);
     # applied to all parameters before each optimizer step
@@ -196,14 +196,14 @@ class TrainConfig:
 
     # Total number of optimizer steps (not micro-steps); training loop ends
     # when global_step reaches this value
-    max_steps: int = 10000
+    max_steps: int = 11000
 
     # Run the validation loop every eval_interval optimizer steps;
     # computes average val loss and saves checkpoint if improved
-    eval_interval: int = 500
+    eval_interval: int = 50
 
     # Print training loss to stdout every log_interval optimizer steps
-    log_interval: int = 50
+    log_interval: int = 5
 
     # Fraction of max_steps used for linear LR warmup (0 → max_lr);
     # after warmup, LR decays via cosine schedule to max_lr/10
